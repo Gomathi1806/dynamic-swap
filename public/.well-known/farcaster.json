@@ -1,0 +1,18 @@
+{
+  "accountAssociation": {
+    "header": "eyJmaWQiOjEyMzQ1NiwidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweDEyMzQ1Njc4OTBhYmNkZWYifQ",
+    "payload": "eyJkb21haW4iOiJkeW5hbWljc3dhcC54eXoifQ",
+    "signature": "YOUR_SIGNATURE_HERE"
+  },
+  "frame": {
+    "version": "1",
+    "name": "DynamicSwap",
+    "iconUrl": "https://dynamicswap.xyz/favicon.svg",
+    "homeUrl": "https://dynamicswap.xyz",
+    "imageUrl": "https://dynamicswap.xyz/api/frame-image",
+    "buttonTitle": "Open DynamicSwap",
+    "splashImageUrl": "https://dynamicswap.xyz/api/og",
+    "splashBackgroundColor": "#1f1135",
+    "webhookUrl": "https://dynamicswap.xyz/api/webhook"
+  }
+}
