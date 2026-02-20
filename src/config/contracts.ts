@@ -54,7 +54,21 @@ export const CONTRACTS = {
 
 
   // Celo Mainnet (Chain ID: 42220)
-
+interface ChainConfig {
+  chainId: number;
+  name: string;
+  hookAddress: string;
+  poolManager: string;
+  positionManager: string;
+  universalRouter: string;
+  permit2: string;
+  stateView: string;
+  quoter: string;
+  rpcUrl: string;
+  explorer: string;
+  owner: string;
+  tickSpacing: number;  // ADD THIS
+}
 
   
 
