@@ -1,10 +1,10 @@
-// Contract addresses for all supported chains
+
 export const CONTRACTS = {
   // Base Mainnet (Chain ID: 8453)
   base: {
     chainId: 8453,
     name: "Base",
-    hookAddress: "0x14a8bf1bb6419bed0986a4c32f8cd6341744e0c0",
+    hookAddress: "0x14a8bf1bb6419bed0986a4c32f8cd6341744e0c0", // NEW!
     poolManager: "0x498581fF718922c3f8e6A244956aF099B2652b2b",
     positionManager: "0x7C5f5A4bBd8fD63184577525326123B519429bDc",
     universalRouter: "0x6fF5693b99212Da76ad316178A184AB56D299b43",
@@ -14,18 +14,14 @@ export const CONTRACTS = {
     rpcUrl: "https://mainnet.base.org",
     explorer: "https://basescan.org",
     owner: "0x22bc13d2936f738bc820A6934FA8eC60EA51a621",
+    tickSpacing: 200, // ADD THIS!
   },
-optimism: {
-  hookAddress: "0xb5E6D6cb548033dA8F18e7f177a9aE485d81a0c0", // NEW!
-  // ... rest stays same
-},
-
 
   // Celo Mainnet (Chain ID: 42220)
   celo: {
     chainId: 42220,
     name: "Celo",
-    hookAddress: "0x91f2c11dBa99F642470Dc548b566208bE2Ce48F6",
+    hookAddress: "0xe96B2C7416596fE707ba40379B909F42F18d7FC0", // Already correct
     poolManager: "0x288dc841A52FCA2707c6947B3A777c5E56cd87BC",
     positionManager: "0xf7965f3981e4d5bc383bfbcb61501763e9068ca9",
     universalRouter: "0x643770e279d5d0733f21d6dc03a8efbabf3255b4",
@@ -35,24 +31,32 @@ optimism: {
     rpcUrl: "https://forno.celo.org",
     explorer: "https://celoscan.io",
     owner: "0x22bc13d2936f738bc820A6934FA8eC60EA51a621",
+    tickSpacing: 200,
   },
 
-  // Unichain Mainnet (Chain ID: 130)
-  unichain: {
-    chainId: 130,
-    name: "Unichain",
-    hookAddress: "0xf67f15838B39c5c9CeB187f5e5Cae0a625F0Be35",
-    poolManager: "0x1F98400000000000000000000000000000000004",
-    positionManager: "0x4529a01c7a0410167c5740c487a8de60232617bf",
-    universalRouter: "0xef740bf23acae26f6492b10de645d6b98dc8eaf3",
+  // Optimism Mainnet (Chain ID: 10)
+  optimism: {
+    chainId: 10,
+    name: "Optimism",
+    hookAddress: "0xb5E6D6cb548033dA8F18e7f177a9aE485d81a0c0", // NEW!
+    poolManager: "0x9a13F98Cb987694C9F086b1F5eB990EeA8264Ec3",
+    positionManager: "0x3c3Ea4B57a46241e54610e5f022E5c45859a1017",
+    universalRouter: "0x851116D9223FABeD8E56c0E6b8Ad0c31D98b3507",
     permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
-    stateView: "0x1F984000000000000000000000000000000000b0",
-    quoter: "0x1F98400000000000000000000000000000000009",
-    rpcUrl: "https://mainnet.unichain.org",
-    explorer: "https://uniscan.xyz",
+    stateView: "0xc18a73BA321B20844Fa123f7D97aCD5CC46527FA",
+    quoter: "0x1f3131a13296FB91c90870043742C3cdBFCe5c9a",
+    rpcUrl: "https://mainnet.optimism.io",
+    explorer: "https://optimistic.etherscan.io",
     owner: "0x22bc13d2936f738bc820A6934FA8eC60EA51a621",
+    tickSpacing: 200,
   },
 };
+
+
+  // Celo Mainnet (Chain ID: 42220)
+
+
+  
 
 // Owner wallet address
 export const OWNER_ADDRESS = "0x22bc13d2936f738bc820A6934FA8eC60EA51a621";
