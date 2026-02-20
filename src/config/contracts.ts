@@ -4,7 +4,7 @@ export const CONTRACTS = {
   base: {
     chainId: 8453,
     name: "Base",
-    hookAddress: "0x2c80c5cd9fecc3e32dfaa654e022738480a4909a",
+    hookAddress: "0x14a8bf1bb6419bed0986a4c32f8cd6341744e0c0",
     poolManager: "0x498581fF718922c3f8e6A244956aF099B2652b2b",
     positionManager: "0x7C5f5A4bBd8fD63184577525326123B519429bDc",
     universalRouter: "0x6fF5693b99212Da76ad316178A184AB56D299b43",
@@ -15,6 +15,11 @@ export const CONTRACTS = {
     explorer: "https://basescan.org",
     owner: "0x22bc13d2936f738bc820A6934FA8eC60EA51a621",
   },
+optimism: {
+  hookAddress: "0xb5E6D6cb548033dA8F18e7f177a9aE485d81a0c0", // NEW!
+  // ... rest stays same
+},
+
 
   // Celo Mainnet (Chain ID: 42220)
   celo: {
