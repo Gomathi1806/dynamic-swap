@@ -2,13 +2,15 @@
 
 Uniswap V4 Dynamic Fee Hook - Smart liquidity protection through volatility-based fee adjustment.
 
+
+
 ## 🌐 Live Deployments
 
 | Chain | Hook Address | Explorer |
-|-------|--------------|----------|
-| **Base** | `0x2c80c5cd9fecc3e32dfaa654e022738480a4909a` | [BaseScan](https://basescan.org/address/0x2c80c5cd9fecc3e32dfaa654e022738480a4909a) |
-| **Celo** | `0x91f2c11dBa99F642470Dc548b566208bE2Ce48F6` | [CeloScan](https://celoscan.io/address/0x91f2c11dBa99F642470Dc548b566208bE2Ce48F6) |
-| **Unichain** | `0xf67f15838B39c5c9CeB187f5e5Cae0a625F0Be35` | [Uniscan](https://uniscan.xyz/address/0xf67f15838B39c5c9CeB187f5e5Cae0a625F0Be35) |
+| --- | --- | --- |
+| **Optimism** | `0xb5E6D6cb548033dA8F18e7f177a9aE485d81a0c0` | [Optimistic Etherscan](https://optimistic.etherscan.io/address/0xb5E6D6cb548033dA8F18e7f177a9aE485d81a0c0) |
+| **Base** | `0x14a8bf1bb6419bed0986a4c32f8cd6341744e0c0` | [BaseScan](https://basescan.org/address/0x14a8bf1bb6419bed0986a4c32f8cd6341744e0c0) |
+| **Celo** | `0xe96B2C7416596fE707ba40379B909F42F18d7FC0` | [CeloScan](https://celoscan.io/address/0xe96B2C7416596fE707ba40379B909F42F18d7FC0) |
 
 **Owner:** `0x22bc13d2936f738bc820A6934FA8eC60EA51a621`
 
