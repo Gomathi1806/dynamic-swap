@@ -2,6 +2,10 @@ import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { base, celo } from "wagmi/chains";
 import { http } from "viem";
 
+// src/config/wagmi.ts
+import { base, celo, optimism } from "wagmi/chains";
+
+
 // Define Unichain
 const unichain = {
   id: 130,
@@ -21,6 +25,14 @@ const unichain = {
 } as const;
 
 export const config = getDefaultConfig({
+  
+  chains: [base, celo, optimism],  // Add optimism
+  transports: {
+    [base.id]: http("https://mainnet.base.org"),
+    [celo.id]: http("https://forno.celo.org"),
+    [optimism.id]: http("https://mainnet.optimism.io"),  // Add this
+  },
+});
   appName: "DynamicSwap",
   projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "demo",
   chains: [base, celo, unichain],
