@@ -65,7 +65,7 @@ export function CreatePoolCard() {
   // Calculate sqrtPriceX96 from price
   const priceToSqrtPriceX96 = (price: number): bigint => {
     const sqrtPrice = Math.sqrt(price);
-    const Q96 = BigInt(2) ** BigInt(96);
+    const Q96 = 2n ** 96n;
     return BigInt(Math.floor(sqrtPrice * Number(Q96)));
   };
 
@@ -80,11 +80,11 @@ export function CreatePoolCard() {
     try {
       // Sort tokens
       const [currency0, currency1, swapped] = sortTokens(token0, token1);
-      
+
       // Adjust price if tokens were swapped
       let price = parseFloat(initialPrice);
       if (swapped) price = 1 / price;
-      
+
       const sqrtPriceX96 = priceToSqrtPriceX96(price);
 
       console.log("Creating pool:", {
@@ -126,7 +126,7 @@ export function CreatePoolCard() {
       }
     } catch (err: any) {
       console.error("Create pool error:", err);
-      
+
       if (err.message?.includes("PoolAlreadyInitialized") || err.message?.includes("0x7983c051")) {
         setError("This pool already exists!");
       } else if (err.message?.includes("HookAddressNotValid")) {

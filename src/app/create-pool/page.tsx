@@ -1,6 +1,8 @@
 // src/app/create-pool/page.tsx
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { CreatePoolCard } from "@/components/CreatePoolCard";
 
 export default function CreatePoolPage() {
@@ -11,7 +13,7 @@ export default function CreatePoolPage() {
         <p className="text-gray-400 text-center mb-8">
           Launch a new trading pair with dynamic fees
         </p>
-        
+
         <CreatePoolCard />
 
         <div className="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700">

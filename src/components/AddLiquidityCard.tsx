@@ -42,11 +42,11 @@ export function AddLiquidityCard({ initialToken0, initialToken1 }: AddLiquidityC
   // Initialize tokens
   useEffect(() => {
     if (tokens.length >= 2) {
-      const t0 = initialToken0 
-        ? tokens.find(t => t.address.toLowerCase() === initialToken0.toLowerCase()) 
+      const t0 = initialToken0
+        ? tokens.find(t => t.address.toLowerCase() === initialToken0.toLowerCase())
         : tokens[0];
-      const t1 = initialToken1 
-        ? tokens.find(t => t.address.toLowerCase() === initialToken1.toLowerCase()) 
+      const t1 = initialToken1
+        ? tokens.find(t => t.address.toLowerCase() === initialToken1.toLowerCase())
         : tokens[1];
       setToken0(t0 || tokens[0]);
       setToken1(t1 || tokens[1]);
@@ -57,7 +57,7 @@ export function AddLiquidityCard({ initialToken0, initialToken1 }: AddLiquidityC
   useEffect(() => {
     const fetchBalances = async () => {
       if (!publicClient || !address) return;
-      
+
       if (token0) {
         try {
           const balance = await publicClient.readContract({
@@ -131,7 +131,7 @@ export function AddLiquidityCard({ initialToken0, initialToken1 }: AddLiquidityC
 
   const handleApprove = async (tokenIndex: 0 | 1) => {
     if (!walletClient || !publicClient || !config) return;
-    
+
     const token = tokenIndex === 0 ? token0 : token1;
     if (!token) return;
 
@@ -147,7 +147,7 @@ export function AddLiquidityCard({ initialToken0, initialToken1 }: AddLiquidityC
         args: [config.positionManager as `0x${string}`, maxUint256],
       });
       await publicClient.waitForTransactionReceipt({ hash });
-      
+
       if (tokenIndex === 0) {
         setApprovals(prev => ({ ...prev, token0: true }));
       } else {
@@ -163,11 +163,11 @@ export function AddLiquidityCard({ initialToken0, initialToken1 }: AddLiquidityC
 
   const handleAddLiquidity = async () => {
     if (!token0 || !token1 || !config) return;
-    
+
     setIsLoading(true);
     setError(null);
     setSuccess(null);
-    
+
     try {
       // V4 liquidity requires complex encoding
       // Show helpful success message
@@ -195,8 +195,8 @@ export function AddLiquidityCard({ initialToken0, initialToken1 }: AddLiquidityC
     );
   }
 
-  const needsToken0Approval = !approvals.token0 && amount0 && parseFloat(amount0) > 0;
-  const needsToken1Approval = !approvals.token1 && amount1 && parseFloat(amount1) > 0;
+  const needsToken0Approval = Boolean(!approvals.token0 && amount0 && parseFloat(amount0) > 0);
+  const needsToken1Approval = Boolean(!approvals.token1 && amount1 && parseFloat(amount1) > 0);
 
   return (
     <div className="bg-gray-800/50 rounded-2xl p-6 border border-gray-700 max-w-md mx-auto">

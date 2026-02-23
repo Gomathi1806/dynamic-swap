@@ -1,6 +1,8 @@
 // src/app/pools/page.tsx
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useChainId } from "wagmi";
@@ -28,7 +30,7 @@ export default function PoolsPage() {
   const { pools, isLoading, error, refetch } = usePoolDiscovery(selectedChain || undefined);
 
   // Filter pools by selected chain
-  const filteredPools = selectedChain 
+  const filteredPools = selectedChain
     ? pools.filter(p => p.chainId === selectedChain)
     : pools;
 
@@ -64,11 +66,10 @@ export default function PoolsPage() {
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
           <button
             onClick={() => setSelectedChain(null)}
-            className={`px-4 py-2 rounded-xl font-medium whitespace-nowrap transition-all ${
-              selectedChain === null
+            className={`px-4 py-2 rounded-xl font-medium whitespace-nowrap transition-all ${selectedChain === null
                 ? "bg-purple-500 text-white"
                 : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-            }`}
+              }`}
           >
             All Chains ({pools.length})
           </button>
@@ -78,11 +79,10 @@ export default function PoolsPage() {
               <button
                 key={chain.chainId}
                 onClick={() => setSelectedChain(chain.chainId)}
-                className={`px-4 py-2 rounded-xl font-medium whitespace-nowrap transition-all ${
-                  selectedChain === chain.chainId
+                className={`px-4 py-2 rounded-xl font-medium whitespace-nowrap transition-all ${selectedChain === chain.chainId
                     ? "bg-purple-500 text-white"
                     : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                }`}
+                  }`}
               >
                 {chain.name} ({count})
               </button>
@@ -122,7 +122,7 @@ export default function PoolsPage() {
             ) : (
               <div className="text-center py-16 bg-gray-800/30 rounded-2xl border border-gray-700">
                 <p className="text-gray-400 mb-4">
-                  {pools.length === 0 
+                  {pools.length === 0
                     ? "No pools found. Be the first to create one!"
                     : "No pools found for this chain."}
                 </p>
@@ -141,7 +141,7 @@ export default function PoolsPage() {
         <div className="mt-8 p-4 bg-purple-500/10 rounded-xl border border-purple-500/20">
           <h3 className="font-semibold text-purple-300 mb-2">💡 How Pool Discovery Works</h3>
           <p className="text-sm text-gray-300">
-            Pools are automatically discovered by scanning blockchain events. When anyone creates a pool 
+            Pools are automatically discovered by scanning blockchain events. When anyone creates a pool
             using DynamicSwap hook, it will appear here automatically - no manual adding required!
           </p>
         </div>
@@ -156,9 +156,9 @@ export default function PoolsPage() {
               >
                 ✕ Close
               </Link>
-              <AddLiquidityCard 
-                initialToken0={token0Param || undefined} 
-                initialToken1={token1Param || undefined} 
+              <AddLiquidityCard
+                initialToken0={token0Param || undefined}
+                initialToken1={token1Param || undefined}
               />
             </div>
           </div>

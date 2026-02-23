@@ -1,6 +1,8 @@
 // src/app/swap/page.tsx
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useSearchParams } from "next/navigation";
 import { SwapCard } from "@/components/SwapCard";
 
@@ -16,17 +18,17 @@ export default function SwapPage() {
         <p className="text-gray-400 text-center mb-8">
           Trade tokens with dynamic fees based on volatility
         </p>
-        
-        <SwapCard 
-          initialToken0={token0 || undefined} 
-          initialToken1={token1 || undefined} 
+
+        <SwapCard
+          initialToken0={token0 || undefined}
+          initialToken1={token1 || undefined}
         />
 
         <div className="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700">
           <h3 className="font-semibold mb-2">About Dynamic Fees</h3>
           <p className="text-sm text-gray-400">
-            Unlike traditional DEXs with fixed fees, DynamicSwap automatically adjusts fees 
-            based on market volatility. During calm markets, you pay as low as 0.30%. 
+            Unlike traditional DEXs with fixed fees, DynamicSwap automatically adjusts fees
+            based on market volatility. During calm markets, you pay as low as 0.30%.
             During volatile periods, fees increase up to 1.00% to protect liquidity providers.
           </p>
         </div>

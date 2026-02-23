@@ -21,9 +21,9 @@ export default function HomePage() {
           <br />
           <span className="text-white">for DeFi</span>
         </h1>
-        
+
         <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
-          Uniswap V4 DEX with volatility-based fee adjustment. 
+          Uniswap V4 DEX with volatility-based fee adjustment.
           Fees automatically scale from 0.30% to 1.00% based on market conditions.
         </p>
 
