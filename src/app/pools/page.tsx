@@ -1,9 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAccount, useChainId, useWriteContract, useReadContract, usePublicClient } from 'wagmi';
-import { parseUnits, formatUnits, encodeAbiParameters, encodePacked, concat, toHex } from 'viem';
+import { parseUnits, formatUnits, encodeAbiParameters, encodePacked, maxUint160, maxUint48 } from 'viem';
 import Link from 'next/link';
+
+// Permit2 address is the same on all chains
+const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3' as const;
 
 // Contract addresses per chain
 const CONTRACTS: Record<number, {
@@ -56,7 +59,6 @@ const CONTRACTS: Record<number, {
 const Actions = {
   MINT_POSITION: 0,
   SETTLE_PAIR: 16,
-  SWEEP: 23,
 };
 
 const ERC20_ABI = [
@@ -88,6 +90,37 @@ const ERC20_ABI = [
   },
 ] as const;
 
+// Permit2 AllowanceTransfer ABI
+const PERMIT2_ABI = [
+  {
+    name: 'approve',
+    type: 'function',
+    inputs: [
+      { name: 'token', type: 'address' },
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint160' },
+      { name: 'expiration', type: 'uint48' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    name: 'allowance',
+    type: 'function',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'token', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [
+      { name: 'amount', type: 'uint160' },
+      { name: 'expiration', type: 'uint48' },
+      { name: 'nonce', type: 'uint48' },
+    ],
+    stateMutability: 'view',
+  },
+] as const;
+
 // Position Manager ABI
 const POSITION_MANAGER_ABI = [
   {
@@ -103,7 +136,7 @@ const POSITION_MANAGER_ABI = [
 ] as const;
 
 type View = 'list' | 'add';
-type Step = 'input' | 'approving' | 'adding' | 'success' | 'error';
+type Step = 'input' | 'approving-erc20' | 'approving-permit2' | 'adding' | 'success' | 'error';
 
 export default function PoolsPage() {
   const { address, isConnected } = useAccount();
@@ -114,7 +147,7 @@ export default function PoolsPage() {
   const [step, setStep] = useState<Step>('input');
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
-  const [approving, setApproving] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string>('');
 
   const [token0Amount, setToken0Amount] = useState('0.001');
   const [token1Amount, setToken1Amount] = useState('10');
@@ -138,27 +171,53 @@ export default function PoolsPage() {
     args: address ? [address] : undefined,
   });
 
-  // Read allowances
-  const { data: allowance0, refetch: refetchAllowance0 } = useReadContract({
+  // Read ERC20 allowances to Permit2
+  const { data: erc20Allowance0, refetch: refetchErc20Allowance0 } = useReadContract({
     address: contracts?.weth,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address && contracts ? [address, contracts.positionManager] : undefined,
+    args: address ? [address, PERMIT2_ADDRESS] : undefined,
   });
 
-  const { data: allowance1, refetch: refetchAllowance1 } = useReadContract({
+  const { data: erc20Allowance1, refetch: refetchErc20Allowance1 } = useReadContract({
     address: contracts?.usdc,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address && contracts ? [address, contracts.positionManager] : undefined,
+    args: address ? [address, PERMIT2_ADDRESS] : undefined,
+  });
+
+  // Read Permit2 allowances to Position Manager
+  const { data: permit2Allowance0, refetch: refetchPermit2Allowance0 } = useReadContract({
+    address: PERMIT2_ADDRESS,
+    abi: PERMIT2_ABI,
+    functionName: 'allowance',
+    args: address && contracts ? [address, contracts.weth, contracts.positionManager] : undefined,
+  });
+
+  const { data: permit2Allowance1, refetch: refetchPermit2Allowance1 } = useReadContract({
+    address: PERMIT2_ADDRESS,
+    abi: PERMIT2_ABI,
+    functionName: 'allowance',
+    args: address && contracts ? [address, contracts.usdc, contracts.positionManager] : undefined,
   });
 
   const amount0Wei = parseUnits(token0Amount || '0', 18);
   const amount1Wei = parseUnits(token1Amount || '0', contracts?.usdcDecimals || 6);
 
-  const needs0Approval = !allowance0 || (allowance0 as bigint) < amount0Wei;
-  const needs1Approval = !allowance1 || (allowance1 as bigint) < amount1Wei;
-  const needsAnyApproval = needs0Approval || needs1Approval;
+  // Check if ERC20 approval to Permit2 is needed
+  const needsErc20Approval0 = !erc20Allowance0 || (erc20Allowance0 as bigint) < amount0Wei;
+  const needsErc20Approval1 = !erc20Allowance1 || (erc20Allowance1 as bigint) < amount1Wei;
+  const needsAnyErc20Approval = needsErc20Approval0 || needsErc20Approval1;
+
+  // Check if Permit2 approval to Position Manager is needed
+  const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
+  const needsPermit2Approval0 = !permit2Allowance0 ||
+    (permit2Allowance0 as [bigint, number, number])[0] < BigInt(amount0Wei) ||
+    BigInt((permit2Allowance0 as [bigint, number, number])[1]) < currentTimestamp;
+  const needsPermit2Approval1 = !permit2Allowance1 ||
+    (permit2Allowance1 as [bigint, number, number])[0] < BigInt(amount1Wei) ||
+    BigInt((permit2Allowance1 as [bigint, number, number])[1]) < currentTimestamp;
+  const needsAnyPermit2Approval = needsPermit2Approval0 || needsPermit2Approval1;
 
   const formatBalance = (balance: bigint | undefined, decimals: number) => {
     if (!balance) return '0.0000';
@@ -180,7 +239,7 @@ export default function PoolsPage() {
       : [contracts.usdc, contracts.weth, false];
   };
 
-  // Encode the modifyLiquidities call with CORRECT V4 format
+  // Encode the modifyLiquidities call
   const encodeModifyLiquiditiesData = (): `0x${string}` => {
     if (!contracts || !address) throw new Error('Missing contracts or address');
 
@@ -194,18 +253,16 @@ export default function PoolsPage() {
     const tickLower = -887200;
     const tickUpper = 887200;
 
-    // Liquidity calculation (simplified - use amt0 as proxy)
-    const liquidity = amt0 > 0n ? amt0 : 1000000000000000n;
+    // Liquidity calculation - use a reasonable amount
+    const liquidity = amt0 > 0n ? amt0 * 1000n : 1000000000000000n;
 
-    // Actions: MINT_POSITION (0) + SETTLE_PAIR (16)
-    // Using encodePacked for actions as per Uniswap docs
+    // Actions: MINT_POSITION + SETTLE_PAIR (using encodePacked as per docs)
     const actions = encodePacked(
       ['uint8', 'uint8'],
       [Actions.MINT_POSITION, Actions.SETTLE_PAIR]
     );
 
     // Encode MINT_POSITION params
-    // params[0] = abi.encode(poolKey, tickLower, tickUpper, liquidity, amount0Max, amount1Max, recipient, hookData)
     const mintParams = encodeAbiParameters(
       [
         {
@@ -237,15 +294,14 @@ export default function PoolsPage() {
         tickLower,
         tickUpper,
         liquidity,
-        BigInt(amt0) * 2n, // amount0Max with slippage (cast to ensure uint128 range)
-        BigInt(amt1) * 2n, // amount1Max with slippage
+        BigInt(amt0) * 10n, // amount0Max with large slippage tolerance
+        BigInt(amt1) * 10n, // amount1Max with large slippage tolerance
         address,
         '0x' as `0x${string}`, // empty hookData
       ]
     );
 
     // Encode SETTLE_PAIR params
-    // params[1] = abi.encode(currency0, currency1)
     const settleParams = encodeAbiParameters(
       [{ type: 'address' }, { type: 'address' }],
       [currency0 as `0x${string}`, currency1 as `0x${string}`]
@@ -260,74 +316,97 @@ export default function PoolsPage() {
     return unlockData;
   };
 
-  // Handle approvals
-  const handleApprove = async () => {
-    if (!contracts || !publicClient) return;
-
-    setStep('approving');
-    setError(null);
-
-    try {
-      // Approve WETH if needed
-      if (needs0Approval) {
-        setApproving(contracts.wethSymbol);
-        const hash = await writeContractAsync({
-          address: contracts.weth,
-          abi: ERC20_ABI,
-          functionName: 'approve',
-          args: [contracts.positionManager, amount0Wei * 1000n],
-        });
-        await publicClient.waitForTransactionReceipt({ hash });
-        await refetchAllowance0();
-      }
-
-      // Approve USDC if needed
-      if (needs1Approval) {
-        setApproving('USDC');
-        const hash = await writeContractAsync({
-          address: contracts.usdc,
-          abi: ERC20_ABI,
-          functionName: 'approve',
-          args: [contracts.positionManager, amount1Wei * 1000n],
-        });
-        await publicClient.waitForTransactionReceipt({ hash });
-        await refetchAllowance1();
-      }
-
-      setApproving(null);
-      // After approvals, go directly to adding liquidity
-      await handleAddLiquidity();
-
-    } catch (err: any) {
-      console.error('Approval error:', err);
-      setError(err.shortMessage || err.message || 'Approval failed');
-      setStep('error');
-      setApproving(null);
-    }
-  };
-
-  // Handle add liquidity
-  const handleAddLiquidity = async () => {
+  // Main flow handler
+  const handleStartFlow = async () => {
     if (!contracts || !publicClient || !address) return;
 
-    setStep('adding');
     setError(null);
 
     try {
+      // Step 1: ERC20 approvals to Permit2
+      if (needsAnyErc20Approval) {
+        setStep('approving-erc20');
+
+        if (needsErc20Approval0) {
+          setStatusMessage(`Approving ${contracts.wethSymbol} for Permit2...`);
+          const hash = await writeContractAsync({
+            address: contracts.weth,
+            abi: ERC20_ABI,
+            functionName: 'approve',
+            args: [PERMIT2_ADDRESS, amount0Wei * 1000n],
+          });
+          await publicClient.waitForTransactionReceipt({ hash });
+          await refetchErc20Allowance0();
+        }
+
+        if (needsErc20Approval1) {
+          setStatusMessage('Approving USDC for Permit2...');
+          const hash = await writeContractAsync({
+            address: contracts.usdc,
+            abi: ERC20_ABI,
+            functionName: 'approve',
+            args: [PERMIT2_ADDRESS, amount1Wei * 1000n],
+          });
+          await publicClient.waitForTransactionReceipt({ hash });
+          await refetchErc20Allowance1();
+        }
+      }
+
+      // Step 2: Permit2 approvals to Position Manager
+      if (needsAnyPermit2Approval) {
+        setStep('approving-permit2');
+
+        // Set expiration to 30 days from now
+        const expiration = BigInt(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60);
+
+        if (needsPermit2Approval0) {
+          setStatusMessage(`Approving ${contracts.wethSymbol} via Permit2...`);
+          const hash = await writeContractAsync({
+            address: PERMIT2_ADDRESS,
+            abi: PERMIT2_ABI,
+            functionName: 'approve',
+            args: [
+              contracts.weth,
+              contracts.positionManager,
+              maxUint160, // Max amount
+              Number(expiration), // 30 days expiration
+            ],
+          });
+          await publicClient.waitForTransactionReceipt({ hash });
+          await refetchPermit2Allowance0();
+        }
+
+        if (needsPermit2Approval1) {
+          setStatusMessage('Approving USDC via Permit2...');
+          const hash = await writeContractAsync({
+            address: PERMIT2_ADDRESS,
+            abi: PERMIT2_ABI,
+            functionName: 'approve',
+            args: [
+              contracts.usdc,
+              contracts.positionManager,
+              maxUint160, // Max amount
+              Number(expiration), // 30 days expiration
+            ],
+          });
+          await publicClient.waitForTransactionReceipt({ hash });
+          await refetchPermit2Allowance1();
+        }
+      }
+
+      // Step 3: Add liquidity
+      setStep('adding');
+      setStatusMessage('Adding liquidity... Please confirm in wallet');
+
       const unlockData = encodeModifyLiquiditiesData();
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour
-
-      // Determine if we need to send ETH value
-      // On Base/Unichain, WETH is 0x4200...0006, we use wrapped tokens not native
-      // So we don't send ETH value, just approve WETH
-      const valueToSend = 0n;
 
       const hash = await writeContractAsync({
         address: contracts.positionManager,
         abi: POSITION_MANAGER_ABI,
         functionName: 'modifyLiquidities',
         args: [unlockData, deadline],
-        value: valueToSend,
+        value: 0n, // Using wrapped tokens, not native ETH
       });
 
       setTxHash(hash);
@@ -335,18 +414,9 @@ export default function PoolsPage() {
       setStep('success');
 
     } catch (err: any) {
-      console.error('Add liquidity error:', err);
-      setError(err.shortMessage || err.message || 'Add liquidity failed');
+      console.error('Transaction error:', err);
+      setError(err.shortMessage || err.message || 'Transaction failed');
       setStep('error');
-    }
-  };
-
-  // Start the full flow
-  const handleStartFlow = async () => {
-    if (needsAnyApproval) {
-      await handleApprove();
-    } else {
-      await handleAddLiquidity();
     }
   };
 
@@ -355,7 +425,17 @@ export default function PoolsPage() {
     setStep('input');
     setError(null);
     setTxHash(null);
-    setApproving(null);
+    setStatusMessage('');
+  };
+
+  // Calculate approval status for display
+  const getApprovalStatus = () => {
+    const steps = [];
+    if (needsErc20Approval0) steps.push(`Approve ${contracts?.wethSymbol} → Permit2`);
+    if (needsErc20Approval1) steps.push('Approve USDC → Permit2');
+    if (needsPermit2Approval0) steps.push(`Approve ${contracts?.wethSymbol} → Position Manager`);
+    if (needsPermit2Approval1) steps.push('Approve USDC → Position Manager');
+    return steps;
   };
 
   if (!contracts) {
@@ -559,7 +639,7 @@ export default function PoolsPage() {
               )}
 
               {/* Input/Processing States */}
-              {(step === 'input' || step === 'approving' || step === 'adding') && (
+              {(step === 'input' || step === 'approving-erc20' || step === 'approving-permit2' || step === 'adding') && (
                 <>
                   {/* Token 0 Input */}
                   <div className="mb-4">
@@ -584,7 +664,7 @@ export default function PoolsPage() {
                         MAX
                       </button>
                       <div className="bg-gray-700 px-4 py-2 rounded-xl flex items-center gap-2">
-                        {!needs0Approval && <span className="text-green-400 text-sm">✓</span>}
+                        {!needsErc20Approval0 && !needsPermit2Approval0 && <span className="text-green-400 text-sm">✓</span>}
                         <span className="text-white font-semibold">{contracts.wethSymbol}</span>
                       </div>
                     </div>
@@ -620,7 +700,7 @@ export default function PoolsPage() {
                         MAX
                       </button>
                       <div className="bg-gray-700 px-4 py-2 rounded-xl flex items-center gap-2">
-                        {!needs1Approval && <span className="text-green-400 text-sm">✓</span>}
+                        {!needsErc20Approval1 && !needsPermit2Approval1 && <span className="text-green-400 text-sm">✓</span>}
                         <span className="text-white font-semibold">USDC</span>
                       </div>
                     </div>
@@ -635,32 +715,35 @@ export default function PoolsPage() {
                   </div>
 
                   {/* Status Messages */}
-                  {step === 'approving' && (
-                    <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-xl p-4 mb-4">
-                      <div className="flex items-center gap-3 text-yellow-300">
-                        <div className="w-5 h-5 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
-                        <span>Approving {approving}... Please confirm in wallet</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {step === 'adding' && (
+                  {step !== 'input' && (
                     <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4 mb-4">
                       <div className="flex items-center gap-3 text-blue-300">
                         <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                        <span>Adding liquidity... Please confirm in wallet</span>
+                        <span>{statusMessage}</span>
                       </div>
                     </div>
                   )}
 
-                  {/* Approval Status */}
-                  {!needsAnyApproval && step === 'input' && (
+                  {/* Pending Approvals Info */}
+                  {step === 'input' && (needsAnyErc20Approval || needsAnyPermit2Approval) && (
+                    <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-xl p-4 mb-4">
+                      <h4 className="text-yellow-300 font-semibold mb-2">📝 Approvals Needed</h4>
+                      <ul className="text-sm text-yellow-300/80 space-y-1">
+                        {getApprovalStatus().map((s, i) => (
+                          <li key={i}>• {s}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* All Approved Info */}
+                  {step === 'input' && !needsAnyErc20Approval && !needsAnyPermit2Approval && (
                     <div className="bg-green-900/20 border border-green-500/30 rounded-xl p-4 mb-4">
                       <div className="flex items-center gap-2 text-green-400">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
-                        <span>Both tokens already approved!</span>
+                        <span>All approvals in place! Ready to add liquidity.</span>
                       </div>
                     </div>
                   )}
@@ -673,13 +756,13 @@ export default function PoolsPage() {
                     >
                       Connect Wallet
                     </button>
-                  ) : step === 'approving' || step === 'adding' ? (
+                  ) : step !== 'input' ? (
                     <button
                       disabled
                       className="w-full py-4 bg-gray-700 text-gray-400 rounded-xl font-semibold cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                      {step === 'approving' ? 'Approving...' : 'Adding Liquidity...'}
+                      Processing...
                     </button>
                   ) : (
                     <button
@@ -687,7 +770,9 @@ export default function PoolsPage() {
                       disabled={!token0Amount || !token1Amount || Number(token0Amount) <= 0 || Number(token1Amount) <= 0}
                       className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-xl font-semibold transition-all"
                     >
-                      {needsAnyApproval ? 'Approve & Add Liquidity' : 'Add Liquidity'}
+                      {needsAnyErc20Approval || needsAnyPermit2Approval
+                        ? 'Approve & Add Liquidity'
+                        : 'Add Liquidity'}
                     </button>
                   )}
                 </>
@@ -697,15 +782,17 @@ export default function PoolsPage() {
             {/* Info Card */}
             {step === 'input' && (
               <div className="mt-6 bg-gray-800/30 rounded-xl p-4">
-                <h4 className="text-white font-semibold mb-2">📋 What happens next</h4>
-                <ul className="text-sm text-gray-400 space-y-1">
-                  <li className={!needsAnyApproval ? 'text-green-400' : ''}>
-                    {!needsAnyApproval ? '✓ ' : '1. '}Approve tokens for Position Manager
+                <h4 className="text-white font-semibold mb-2">📋 Process Overview</h4>
+                <ol className="text-sm text-gray-400 space-y-1 list-decimal list-inside">
+                  <li className={!needsAnyErc20Approval ? 'text-green-400' : ''}>
+                    {!needsAnyErc20Approval && '✓ '}Approve tokens for Permit2
                   </li>
-                  <li>2. Add liquidity to the {contracts.wethSymbol}/USDC pool</li>
-                  <li>3. Receive LP position NFT</li>
-                  <li>4. Start earning dynamic fees!</li>
-                </ul>
+                  <li className={!needsAnyPermit2Approval ? 'text-green-400' : ''}>
+                    {!needsAnyPermit2Approval && '✓ '}Approve Position Manager via Permit2
+                  </li>
+                  <li>Add liquidity to the pool</li>
+                  <li>Receive LP position NFT & start earning fees!</li>
+                </ol>
               </div>
             )}
           </div>
@@ -714,4 +801,3 @@ export default function PoolsPage() {
     </div>
   );
 }
-
