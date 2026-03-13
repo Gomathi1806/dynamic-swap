@@ -156,8 +156,8 @@ export default function PoolsPage() {
   const amount0Wei = parseUnits(token0Amount || '0', 18);
   const amount1Wei = parseUnits(token1Amount || '0', contracts?.usdcDecimals || 6);
 
-  const needs0Approval = !allowance0 || allowance0 < amount0Wei;
-  const needs1Approval = !allowance1 || allowance1 < amount1Wei;
+  const needs0Approval = !allowance0 || (allowance0 as bigint) < amount0Wei;
+  const needs1Approval = !allowance1 || (allowance1 as bigint) < amount1Wei;
   const needsAnyApproval = needs0Approval || needs1Approval;
 
   const formatBalance = (balance: bigint | undefined, decimals: number) => {
@@ -565,7 +565,7 @@ export default function PoolsPage() {
                   <div className="mb-4">
                     <div className="flex justify-between text-sm mb-2">
                       <span className="text-gray-400">Token 1</span>
-                      <span className="text-gray-400">Balance: {formatBalance(balance0, 18)}</span>
+                      <span className="text-gray-400">Balance: {formatBalance(balance0 as bigint | undefined, 18)}</span>
                     </div>
                     <div className="flex items-center bg-gray-900/50 rounded-xl p-4 border border-gray-700">
                       <input
@@ -577,7 +577,7 @@ export default function PoolsPage() {
                         disabled={step !== 'input'}
                       />
                       <button
-                        onClick={() => balance0 && setToken0Amount(formatUnits(balance0, 18))}
+                        onClick={() => balance0 && setToken0Amount(formatUnits(balance0 as bigint, 18))}
                         className="text-purple-400 text-sm mr-3 hover:text-purple-300"
                         disabled={step !== 'input'}
                       >
@@ -601,7 +601,7 @@ export default function PoolsPage() {
                   <div className="mb-6">
                     <div className="flex justify-between text-sm mb-2">
                       <span className="text-gray-400">Token 2</span>
-                      <span className="text-gray-400">Balance: {formatBalance(balance1, contracts.usdcDecimals)}</span>
+                      <span className="text-gray-400">Balance: {formatBalance(balance1 as bigint | undefined, contracts.usdcDecimals)}</span>
                     </div>
                     <div className="flex items-center bg-gray-900/50 rounded-xl p-4 border border-gray-700">
                       <input
@@ -613,7 +613,7 @@ export default function PoolsPage() {
                         disabled={step !== 'input'}
                       />
                       <button
-                        onClick={() => balance1 && setToken1Amount(formatUnits(balance1, contracts.usdcDecimals))}
+                        onClick={() => balance1 && setToken1Amount(formatUnits(balance1 as bigint, contracts.usdcDecimals))}
                         className="text-purple-400 text-sm mr-3 hover:text-purple-300"
                         disabled={step !== 'input'}
                       >
