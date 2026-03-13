@@ -278,7 +278,7 @@ export function useAddLiquidity() {
             ]);
 
             // Approve WETH if needed
-            if (allowance0 < amount0) {
+            if ((allowance0 as bigint) < amount0) {
                 await writeContractAsync({
                     address: contracts.weth,
                     abi: ERC20_ABI,
@@ -288,7 +288,7 @@ export function useAddLiquidity() {
             }
 
             // Approve USDC if needed
-            if (allowance1 < amount1) {
+            if ((allowance1 as bigint) < amount1) {
                 await writeContractAsync({
                     address: contracts.usdc,
                     abi: ERC20_ABI,
