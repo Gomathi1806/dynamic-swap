@@ -141,8 +141,8 @@ export default function PoolsPage() {
   const amount0Wei = parseUnits(token0Amount || '0', 18);
   const amount1Wei = parseUnits(token1Amount || '0', contracts?.usdcDecimals || 6);
 
-  const needs0Approval = !allowance0 || allowance0 < amount0Wei;
-  const needs1Approval = !allowance1 || allowance1 < amount1Wei;
+  const needs0Approval = !allowance0 || (allowance0 as bigint) < amount0Wei;
+  const needs1Approval = !allowance1 || (allowance1 as bigint) < amount1Wei;
 
   const getChainName = () => {
     switch (chainId) {
