@@ -189,8 +189,8 @@ export default function AddLiquidity() {
   const amount0Wei = parseUnits(token0Amount || '0', 18);
   const amount1Wei = parseUnits(token1Amount || '0', 6); // USDC is 6 decimals
 
-  const needs0Approval = !allowance0 || allowance0 < amount0Wei;
-  const needs1Approval = !allowance1 || allowance1 < amount1Wei;
+  const needs0Approval = !allowance0 || (allowance0 as bigint) < amount0Wei;
+  const needs1Approval = !allowance1 || (allowance1 as bigint) < amount1Wei;
   const needsApproval = needs0Approval || needs1Approval;
 
   // Encode the modifyLiquidities call data for Uniswap V4 Position Manager
@@ -410,7 +410,7 @@ export default function AddLiquidity() {
               <div className="mb-4">
                 <div className="flex justify-between text-sm text-gray-400 mb-2">
                   <span>Token 1</span>
-                  <span>Balance: {formatBalance(balance0, 18)}</span>
+                  <span>Balance: {formatBalance(balance0 as bigint | undefined, 18)}</span>
                 </div>
                 <div className="flex items-center bg-gray-900/50 rounded-xl p-4">
                   <input
@@ -438,7 +438,7 @@ export default function AddLiquidity() {
               <div className="mb-4">
                 <div className="flex justify-between text-sm text-gray-400 mb-2">
                   <span>Token 2</span>
-                  <span>Balance: {formatBalance(balance1, 6)}</span>
+                  <span>Balance: {formatBalance(balance1 as bigint | undefined, 6)}</span>
                 </div>
                 <div className="flex items-center bg-gray-900/50 rounded-xl p-4">
                   <input
