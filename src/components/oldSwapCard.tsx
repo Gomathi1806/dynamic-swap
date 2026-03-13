@@ -7,8 +7,8 @@ import { parseUnits, formatUnits } from "viem";
 import { getChainConfig } from "@/config/contracts";
 import { getTokensForChain, Token } from "@/config/tokens";
 
-// Official Uniswap API URL
-const UNISWAP_API_URL = "https://trade-api.uniswap.org/v1";
+// Uniswap API
+const UNISWAP_API_URL = "https://api.uniswap.org/v2";
 
 const ERC20_ABI = [
   { inputs: [{ name: "owner", type: "address" }], name: "balanceOf", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
@@ -35,7 +35,7 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
   const [amountOut, setAmountOut] = useState("");
   const [balanceIn, setBalanceIn] = useState("0");
   const [balanceOut, setBalanceOut] = useState("0");
-  const [quoteResponse, setQuoteResponse] = useState<any>(null);
+  const [quote, setQuote] = useState<any>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState(false);
   const [isSwapping, setIsSwapping] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,11 +46,11 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
   // Initialize tokens
   useEffect(() => {
     if (tokens.length >= 2) {
-      const t0 = initialToken0
-        ? tokens.find(t => t.address.toLowerCase() === initialToken0.toLowerCase())
+      const t0 = initialToken0 
+        ? tokens.find(t => t.address.toLowerCase() === initialToken0.toLowerCase()) 
         : tokens[0];
-      const t1 = initialToken1
-        ? tokens.find(t => t.address.toLowerCase() === initialToken1.toLowerCase())
+      const t1 = initialToken1 
+        ? tokens.find(t => t.address.toLowerCase() === initialToken1.toLowerCase()) 
         : tokens[1];
       setTokenIn(t0 || tokens[0]);
       setTokenOut(t1 || tokens[1]);
@@ -61,7 +61,7 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
   useEffect(() => {
     const fetchBalances = async () => {
       if (!publicClient || !address) return;
-
+      
       if (tokenIn) {
         try {
           const balance = await publicClient.readContract({
@@ -89,11 +89,11 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
     fetchBalances();
   }, [publicClient, address, tokenIn, tokenOut]);
 
-  // Fetch quote - following official docs
+  // Fetch quote
   const fetchQuote = useCallback(async () => {
     if (!tokenIn || !tokenOut || !amountIn || parseFloat(amountIn) === 0 || !address || !apiKey) {
       setAmountOut("");
-      setQuoteResponse(null);
+      setQuote(null);
       return;
     }
 
@@ -103,64 +103,48 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
     try {
       const amountInWei = parseUnits(amountIn, tokenIn.decimals).toString();
 
-      // Request body per official docs
-      const requestBody = {
-        tokenIn: tokenIn.address,
-        tokenOut: tokenOut.address,
-        tokenInChainId: chainId,
-        tokenOutChainId: chainId,
-        type: "EXACT_INPUT",
-        amount: amountInWei,
-        swapper: address,
-        slippageTolerance: 0.5, // 0.5%
-      };
-
-      console.log("Quote request:", JSON.stringify(requestBody, null, 2));
-
       const response = await fetch(`${UNISWAP_API_URL}/quote`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          tokenIn: tokenIn.address,
+          tokenOut: tokenOut.address,
+          tokenInChainId: chainId,
+          tokenOutChainId: chainId,
+          amount: amountInWei,
+          type: "EXACT_INPUT",
+          swapper: address,
+          slippageTolerance: 50,
+          protocols: ["V4", "V3", "V2"],
+        }),
       });
 
-      const data = await response.json();
-      console.log("Quote response:", JSON.stringify(data, null, 2));
-
       if (!response.ok) {
-        throw new Error(data.detail || data.errorCode || data.message || "Failed to get quote");
+        const errorData = await response.json();
+        throw new Error(errorData.detail || errorData.errorCode || "No route found");
       }
 
-      // Store full response - we need classicQuote and permitSingleData
-      setQuoteResponse(data);
+      const data = await response.json();
+      console.log("Quote response:", data);
+      setQuote(data);
 
-      // Extract output amount based on routing type
-      // Response contains: classicQuote, bridgeQuote, wrapUnwrapQuote, etc.
-      const quote = data.classicQuote || data.wrapUnwrapQuote || data.bridgeQuote;
-
-      if (quote) {
-        let outputAmount = "0";
-
-        // Different response formats
-        if (quote.output?.amount) {
-          outputAmount = formatUnits(BigInt(quote.output.amount), tokenOut.decimals);
-        } else if (quote.outputAmount) {
-          outputAmount = formatUnits(BigInt(quote.outputAmount), tokenOut.decimals);
-        } else if (quote.quote?.amount) {
-          outputAmount = formatUnits(BigInt(quote.quote.amount), tokenOut.decimals);
-        }
-
-        setAmountOut(parseFloat(outputAmount).toFixed(6));
+      // Parse output amount
+      let outputAmount = "0";
+      if (data.quote?.output?.amount) {
+        outputAmount = formatUnits(BigInt(data.quote.output.amount), tokenOut.decimals);
+      } else if (data.quote?.amountOut) {
+        outputAmount = formatUnits(BigInt(data.quote.amountOut), tokenOut.decimals);
       }
+      setAmountOut(parseFloat(outputAmount).toFixed(6));
 
     } catch (err: any) {
       console.error("Quote error:", err);
       setAmountOut("");
-      setQuoteResponse(null);
-
-      if (err.message && !err.message.includes("No route") && !err.message.includes("INSUFFICIENT")) {
+      setQuote(null);
+      if (err.message && !err.message.includes("No route")) {
         setError(err.message);
       }
     } finally {
@@ -174,9 +158,9 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
     return () => clearTimeout(timer);
   }, [fetchQuote]);
 
-  // Execute swap - following official docs exactly
+  // Execute swap
   const handleSwap = async () => {
-    if (!walletClient || !publicClient || !quoteResponse || !address || !tokenIn || !tokenOut) return;
+    if (!walletClient || !publicClient || !quote || !address || !tokenIn || !tokenOut) return;
 
     setIsSwapping(true);
     setError(null);
@@ -185,49 +169,33 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
 
     try {
       let signature: string | undefined;
-
-      // Per docs: permitSingleData (NOT permitData)
-      const permitData = quoteResponse.permitSingleData;
+      const permitData = quote.permitData;
 
       // Step 1: Sign Permit2 if needed
       if (permitData) {
         setSwapStep("Signing permit (1/2)...");
-        console.log("Signing permit2:", JSON.stringify(permitData, null, 2));
-
-        // Sign using _signTypedData format per docs
+        console.log("Signing permit2...", permitData);
+        
         signature = await walletClient.signTypedData({
           domain: permitData.domain,
           types: permitData.types,
           primaryType: "PermitSingle",
           message: permitData.values,
         });
-        console.log("Permit signed:", signature);
+        console.log("Permit signed!");
       }
 
-      // Step 2: Build swap request - CORRECT FORMAT per docs
+      // Step 2: Get swap transaction
       setSwapStep("Building transaction (2/2)...");
-
-      // Per docs: use classicQuote, wrapUnwrapQuote, or bridgeQuote
-      // NOT just "quote"
-      const swapRequest: any = {};
-
-      // Add the correct quote type based on routing
-      if (quoteResponse.classicQuote) {
-        swapRequest.classicQuote = quoteResponse.classicQuote;
-      } else if (quoteResponse.wrapUnwrapQuote) {
-        swapRequest.wrapUnwrapQuote = quoteResponse.wrapUnwrapQuote;
-      } else if (quoteResponse.bridgeQuote) {
-        swapRequest.bridgeQuote = quoteResponse.bridgeQuote;
-      }
-
-      // Per docs: both signature AND permitData must be present, or both omitted
+      
+      const swapBody: any = {
+        quote: quote,
+      };
+      
       if (signature && permitData) {
-        swapRequest.signature = signature;
-        swapRequest.permitData = permitData;
+        swapBody.signature = signature;
+        swapBody.permitData = permitData;
       }
-      // If no permit needed, omit both fields entirely (don't set to null)
-
-      console.log("Swap request:", JSON.stringify(swapRequest, null, 2));
 
       const swapResponse = await fetch(`${UNISWAP_API_URL}/swap`, {
         method: "POST",
@@ -235,46 +203,40 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
         },
-        body: JSON.stringify(swapRequest),
+        body: JSON.stringify(swapBody),
       });
 
-      const swapData = await swapResponse.json();
-      console.log("Swap response:", JSON.stringify(swapData, null, 2));
-
       if (!swapResponse.ok) {
-        throw new Error(swapData.detail || swapData.message || swapData.error || "Failed to build swap");
+        const errorData = await swapResponse.json();
+        console.error("Swap API error:", errorData);
+        throw new Error(errorData.detail || errorData.message || "Failed to build swap");
       }
 
-      // Step 3: Validate transaction data per docs
-      const txData = swapData.swap;
+      const swapData = await swapResponse.json();
+      console.log("Swap data:", swapData);
 
-      if (!txData || !txData.data || txData.data === "" || txData.data === "0x") {
-        throw new Error("Empty transaction data - invalid swap transaction");
-      }
-
-      // Step 4: Send transaction
+      // Step 3: Send transaction
       setSwapStep("Confirm in wallet...");
-
+      
       const hash = await walletClient.sendTransaction({
-        to: txData.to as `0x${string}`,
-        data: txData.data as `0x${string}`,
-        value: BigInt(txData.value || "0"),
-        gas: txData.gasLimit ? BigInt(txData.gasLimit) : undefined,
+        to: swapData.swap.to as `0x${string}`,
+        data: swapData.swap.data as `0x${string}`,
+        value: BigInt(swapData.swap.value || "0"),
       });
 
       setTxHash(hash);
       setSwapStep("Waiting for confirmation...");
 
       await publicClient.waitForTransactionReceipt({ hash });
-
+      
       setSuccess(`Swapped ${amountIn} ${tokenIn.symbol} for ~${amountOut} ${tokenOut.symbol}`);
       setAmountIn("");
       setAmountOut("");
-      setQuoteResponse(null);
+      setQuote(null);
 
     } catch (err: any) {
       console.error("Swap error:", err);
-      if (err.message?.includes("User rejected") || err.message?.includes("user rejected")) {
+      if (err.message?.includes("User rejected")) {
         setError("Transaction cancelled");
       } else {
         setError(err.message || "Swap failed");
@@ -291,7 +253,7 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
     setTokenOut(temp);
     setAmountIn(amountOut);
     setAmountOut("");
-    setQuoteResponse(null);
+    setQuote(null);
   };
 
   const setMaxAmount = () => {
@@ -332,7 +294,7 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
       <div className="bg-gray-900/50 rounded-xl p-4 mb-2">
         <div className="flex justify-between mb-2">
           <span className="text-sm text-gray-400">You pay</span>
-          <button
+          <button 
             onClick={setMaxAmount}
             className="text-sm text-purple-400 hover:text-purple-300"
           >
@@ -405,12 +367,20 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
       </div>
 
       {/* Quote Details */}
-      {quoteResponse && (
+      {quote && (
         <div className="bg-purple-500/10 rounded-xl p-3 mb-4 border border-purple-500/20 space-y-1">
           <div className="flex justify-between text-sm">
             <span className="text-gray-400">Route</span>
-            <span className="text-purple-300">{quoteResponse.routing || "CLASSIC"}</span>
+            <span className="text-purple-300">{quote.routing || "Classic"}</span>
           </div>
+          {quote.quote?.priceImpact && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Price Impact</span>
+              <span className={parseFloat(quote.quote.priceImpact) > 1 ? "text-yellow-400" : "text-gray-300"}>
+                {quote.quote.priceImpact}%
+              </span>
+            </div>
+          )}
           <div className="flex justify-between text-sm">
             <span className="text-gray-400">Slippage</span>
             <span className="text-gray-300">0.5%</span>
@@ -476,7 +446,7 @@ export function SwapCard({ initialToken0, initialToken1 }: SwapCardProps) {
         <button disabled className="w-full py-4 bg-gray-700 text-gray-400 rounded-xl font-medium">
           Getting Quote...
         </button>
-      ) : !quoteResponse ? (
+      ) : !quote ? (
         <button disabled className="w-full py-4 bg-gray-700 text-gray-400 rounded-xl font-medium">
           No Route Found
         </button>

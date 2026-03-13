@@ -6,13 +6,11 @@ import { createPublicClient, http, parseAbiItem } from "viem";
 import { base, optimism, celo } from "viem/chains";
 import { SUPPORTED_CHAINS } from "@/config/contracts";
 
-// ERC20 ABI for token info
 const ERC20_ABI = [
   { inputs: [], name: "symbol", outputs: [{ type: "string" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
 ] as const;
 
-// Initialize event from PoolManager
 const INITIALIZE_EVENT = parseAbiItem(
   "event Initialize(bytes32 indexed id, address indexed currency0, address indexed currency1, uint24 fee, int24 tickSpacing, address hooks, uint160 sqrtPriceX96, int24 tick)"
 );
@@ -31,27 +29,19 @@ export interface Pool {
   blockNumber: bigint;
 }
 
-// ============================================
-// KNOWN TOKEN INFO - Use these instead of RPC calls
-// ============================================
+// Known token info
 const KNOWN_TOKENS: Record<string, { symbol: string; decimals: number }> = {
-  // Base tokens
   "0x4200000000000000000000000000000000000006": { symbol: "WETH", decimals: 18 },
   "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": { symbol: "USDC", decimals: 6 },
-
-  // Optimism tokens
   "0x0b2c639c533813f4aa9d7837caf62653d097ff85": { symbol: "USDC", decimals: 6 },
-
-  // Celo tokens
   "0x471ece3750da237f93b8e339c536989b8978a438": { symbol: "CELO", decimals: 18 },
   "0x765de816845861e75a25fca122bb6898b8b1282a": { symbol: "cUSD", decimals: 18 },
   "0xd8763cba276a3738e6de85b4b3bf5fded6d6ca73": { symbol: "cEUR", decimals: 18 },
   "0x66803fb87abd4aac3cbb3fad7c3aa01f6f3fb207": { symbol: "WBTC", decimals: 8 },
 };
 
-// ============================================
-// KNOWN POOLS - Always show these as fallback
-// ============================================
+// Known pools - will be shown even if event discovery fails
+// NOTE: txHash can be empty "" - PoolCard should handle this
 const KNOWN_POOLS: Pool[] = [
   // Base - WETH/USDC
   {
@@ -81,7 +71,7 @@ const KNOWN_POOLS: Pool[] = [
     txHash: "0xf7606db4c7a4134775a314c72e271ee03208e3b75231d6f59fff2b6f543e44cb",
     blockNumber: BigInt(0),
   },
-  // Celo - CELO/cUSD
+  // Celo - CELO/cUSD (txHash empty - will be discovered or hidden)
   {
     id: "42220-celo-cusd",
     poolId: "0x",
@@ -92,7 +82,7 @@ const KNOWN_POOLS: Pool[] = [
     hookAddress: "0xe96B2C7416596fE707ba40379B909F42F18d7FC0",
     chainId: 42220,
     chainName: "Celo",
-    txHash: "0x",
+    txHash: "", // Empty - will be discovered from events or link will be hidden
     blockNumber: BigInt(0),
   },
   // Celo - WBTC/cUSD
@@ -111,40 +101,27 @@ const KNOWN_POOLS: Pool[] = [
   },
 ];
 
-// Chain configurations
 const CHAIN_CONFIGS: Record<number, { chain: any; rpc: string }> = {
   8453: { chain: base, rpc: "https://mainnet.base.org" },
   10: { chain: optimism, rpc: "https://mainnet.optimism.io" },
   42220: { chain: celo, rpc: "https://forno.celo.org" },
 };
 
-// Get token info - first check KNOWN_TOKENS, then try RPC
-async function getTokenInfo(
-  client: any,
-  address: string
-): Promise<{ symbol: string; decimals: number }> {
+async function getTokenInfo(client: any, address: string): Promise<{ symbol: string; decimals: number }> {
   const addressLower = address.toLowerCase();
+  if (KNOWN_TOKENS[addressLower]) return KNOWN_TOKENS[addressLower];
 
-  // First check our known tokens list
-  if (KNOWN_TOKENS[addressLower]) {
-    return KNOWN_TOKENS[addressLower];
-  }
-
-  // Try RPC call
   try {
     const [symbol, decimals] = await Promise.all([
       client.readContract({ address: address as `0x${string}`, abi: ERC20_ABI, functionName: "symbol" }),
       client.readContract({ address: address as `0x${string}`, abi: ERC20_ABI, functionName: "decimals" }),
     ]);
     return { symbol: symbol as string, decimals: Number(decimals) };
-  } catch (err) {
-    console.warn(`Failed to fetch token info for ${address}, using fallback`);
-    // Return truncated address as symbol
+  } catch {
     return { symbol: address.slice(0, 6) + "..." + address.slice(-4), decimals: 18 };
   }
 }
 
-// Discover pools for a chain
 async function discoverPoolsForChain(chainId: number): Promise<Pool[]> {
   const chainConfig = SUPPORTED_CHAINS[chainId];
   const rpcConfig = CHAIN_CONFIGS[chainId];
@@ -170,25 +147,14 @@ async function discoverPoolsForChain(chainId: number): Promise<Pool[]> {
 
     console.log(`[${chainConfig.name}] Found ${logs.length} Initialize events`);
 
-    // Filter for our hook (case insensitive)
     const hookLower = chainConfig.hookAddress.toLowerCase();
     const filtered = logs.filter((l: any) => {
       const hooks = l.args?.hooks?.toLowerCase();
       const tickSpacing = Number(l.args?.tickSpacing);
-
-      // IMPORTANT: Only include pools with tick spacing 200
-      // Tick spacing 60 doesn't work with dynamic fee hooks
-      const isOurHook = hooks === hookLower;
-      const isValidTickSpacing = tickSpacing === 200;
-
-      if (isOurHook && !isValidTickSpacing) {
-        console.log(`[${chainConfig.name}] Skipping pool with invalid tick spacing: ${tickSpacing}`);
-      }
-
-      return isOurHook && isValidTickSpacing;
+      return hooks === hookLower && tickSpacing === 200;
     });
-
-    console.log(`[${chainConfig.name}] Found ${filtered.length} valid DynamicSwap pools (tick spacing 200)`);
+    
+    console.log(`[${chainConfig.name}] Found ${filtered.length} valid DynamicSwap pools`);
 
     const pools: Pool[] = await Promise.all(
       filtered.map(async (log: any) => {
@@ -220,17 +186,15 @@ async function discoverPoolsForChain(chainId: number): Promise<Pool[]> {
   }
 }
 
-// Merge discovered pools with known pools (no duplicates)
 function mergePools(discovered: Pool[], known: Pool[]): Pool[] {
   const poolMap = new Map<string, Pool>();
 
-  // Add known pools first (as fallback)
   known.forEach((p) => {
     const key = `${p.chainId}-${p.token0.address.toLowerCase()}-${p.token1.address.toLowerCase()}`;
     poolMap.set(key, p);
   });
 
-  // Discovered pools override known pools (they have tx hash and block number)
+  // Discovered pools override known (they have actual tx hash)
   discovered.forEach((p) => {
     const key = `${p.chainId}-${p.token0.address.toLowerCase()}-${p.token1.address.toLowerCase()}`;
     poolMap.set(key, p);
@@ -239,7 +203,6 @@ function mergePools(discovered: Pool[], known: Pool[]): Pool[] {
   return Array.from(poolMap.values());
 }
 
-// Main hook
 export function usePoolDiscovery(chainId?: number) {
   const [pools, setPools] = useState<Pool[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -249,7 +212,6 @@ export function usePoolDiscovery(chainId?: number) {
     setIsLoading(true);
     setError(null);
 
-    // Start with known pools immediately so UI isn't empty
     const knownForChain = chainId
       ? KNOWN_POOLS.filter((p) => p.chainId === chainId)
       : KNOWN_POOLS;
@@ -257,7 +219,6 @@ export function usePoolDiscovery(chainId?: number) {
 
     try {
       const chainIds = chainId ? [chainId] : Object.keys(SUPPORTED_CHAINS).map(Number);
-
       let allDiscovered: Pool[] = [];
 
       for (const cid of chainIds) {
@@ -269,11 +230,9 @@ export function usePoolDiscovery(chainId?: number) {
         }
       }
 
-      // Merge discovered with known (discovered takes precedence)
       const merged = mergePools(allDiscovered, knownForChain);
       setPools(merged);
-
-      console.log(`Total pools: ${merged.length} (${allDiscovered.length} discovered, ${knownForChain.length} known)`);
+      console.log(`Total pools: ${merged.length}`);
     } catch (err: any) {
       console.error("Pool discovery error:", err);
       setError(err.message);

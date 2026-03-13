@@ -4,7 +4,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useSearchParams } from "next/navigation";
-import { SwapCard } from "@/components/SwapCard";
+import { SwapCard } from "@/components/oldSwapCard";
 
 export default function SwapPage() {
   const searchParams = useSearchParams();
