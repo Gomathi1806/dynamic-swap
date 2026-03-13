@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useAccount, useChainId, useWriteContract, useReadContract, usePublicClient } from 'wagmi';
-import { parseUnits, formatUnits, encodeAbiParameters, encodePacked, maxUint160, maxUint48 } from 'viem';
+import { parseUnits, formatUnits, encodeAbiParameters, encodePacked, maxUint160 } from 'viem';
 import Link from 'next/link';
 
 // Permit2 address is the same on all chains
@@ -55,10 +55,20 @@ const CONTRACTS: Record<number, {
   },
 };
 
-// Actions from Uniswap V4 Position Manager
+// ==========================================
+// CORRECT Action values from Uniswap V4 periphery
+// https://github.com/Uniswap/v4-periphery/blob/main/src/libraries/Actions.sol
+// ==========================================
 const Actions = {
-  MINT_POSITION: 0,
-  SETTLE_PAIR: 16,
+  INCREASE_LIQUIDITY: 0x00,
+  DECREASE_LIQUIDITY: 0x01,
+  MINT_POSITION: 0x02,        // CORRECT! (was 0)
+  BURN_POSITION: 0x03,
+  SETTLE_PAIR: 0x0d,          // CORRECT! = 13 (was 16)
+  TAKE_PAIR: 0x11,
+  CLOSE_CURRENCY: 0x12,
+  CLEAR_OR_TAKE: 0x13,
+  SWEEP: 0x14,
 };
 
 const ERC20_ABI = [
@@ -239,7 +249,7 @@ export default function PoolsPage() {
       : [contracts.usdc, contracts.weth, false];
   };
 
-  // Encode the modifyLiquidities call
+  // Encode the modifyLiquidities call - CORRECTED VERSION
   const encodeModifyLiquiditiesData = (): `0x${string}` => {
     if (!contracts || !address) throw new Error('Missing contracts or address');
 
@@ -253,18 +263,27 @@ export default function PoolsPage() {
     const tickLower = -887200;
     const tickUpper = 887200;
 
-    // Liquidity calculation - use a reasonable amount
+    // Liquidity calculation - use a reasonable amount based on token amounts
+    // For a new position, we need to calculate liquidity based on the amounts
     const liquidity = amt0 > 0n ? amt0 * 1000n : 1000000000000000n;
 
-    // Actions: MINT_POSITION + SETTLE_PAIR (using encodePacked as per docs)
+    // ==========================================
+    // CORRECT: Actions encoding using proper values
+    // MINT_POSITION = 0x02, SETTLE_PAIR = 0x0d
+    // ==========================================
     const actions = encodePacked(
       ['uint8', 'uint8'],
-      [Actions.MINT_POSITION, Actions.SETTLE_PAIR]
+      [Actions.MINT_POSITION, Actions.SETTLE_PAIR]  // 0x02, 0x0d
     );
 
-    // Encode MINT_POSITION params
+    console.log('Actions encoded:', actions); // Should be 0x020d
+
+    // ==========================================
+    // Encode MINT_POSITION params per Uniswap V4 docs
+    // ==========================================
     const mintParams = encodeAbiParameters(
       [
+        // PoolKey tuple
         {
           type: 'tuple',
           components: [
@@ -275,15 +294,16 @@ export default function PoolsPage() {
             { type: 'address', name: 'hooks' },
           ],
         },
-        { type: 'int24' },  // tickLower
-        { type: 'int24' },  // tickUpper
+        { type: 'int24' },   // tickLower
+        { type: 'int24' },   // tickUpper
         { type: 'uint256' }, // liquidity
         { type: 'uint128' }, // amount0Max
         { type: 'uint128' }, // amount1Max
-        { type: 'address' }, // owner
+        { type: 'address' }, // recipient
         { type: 'bytes' },   // hookData
       ],
       [
+        // PoolKey
         {
           currency0: currency0 as `0x${string}`,
           currency1: currency1 as `0x${string}`,
@@ -294,24 +314,31 @@ export default function PoolsPage() {
         tickLower,
         tickUpper,
         liquidity,
-        BigInt(amt0) * 10n, // amount0Max with large slippage tolerance
-        BigInt(amt1) * 10n, // amount1Max with large slippage tolerance
-        address,
+        BigInt(amt0) * 2n, // amount0Max (with slippage buffer)
+        BigInt(amt1) * 2n, // amount1Max (with slippage buffer)
+        address,           // recipient of the LP NFT
         '0x' as `0x${string}`, // empty hookData
       ]
     );
 
-    // Encode SETTLE_PAIR params
+    // ==========================================
+    // Encode SETTLE_PAIR params per Uniswap V4 docs
+    // Just currency0 and currency1
+    // ==========================================
     const settleParams = encodeAbiParameters(
       [{ type: 'address' }, { type: 'address' }],
       [currency0 as `0x${string}`, currency1 as `0x${string}`]
     );
 
+    // ==========================================
     // Final unlockData = abi.encode(actions, params[])
+    // ==========================================
     const unlockData = encodeAbiParameters(
       [{ type: 'bytes' }, { type: 'bytes[]' }],
       [actions, [mintParams, settleParams]]
     );
+
+    console.log('Encoded unlockData:', unlockData);
 
     return unlockData;
   };
@@ -368,8 +395,8 @@ export default function PoolsPage() {
             args: [
               contracts.weth,
               contracts.positionManager,
-              maxUint160, // Max amount
-              Number(expiration), // 30 days expiration
+              maxUint160,
+              Number(expiration),
             ],
           });
           await publicClient.waitForTransactionReceipt({ hash });
@@ -385,8 +412,8 @@ export default function PoolsPage() {
             args: [
               contracts.usdc,
               contracts.positionManager,
-              maxUint160, // Max amount
-              Number(expiration), // 30 days expiration
+              maxUint160,
+              Number(expiration),
             ],
           });
           await publicClient.waitForTransactionReceipt({ hash });
@@ -400,6 +427,12 @@ export default function PoolsPage() {
 
       const unlockData = encodeModifyLiquiditiesData();
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour
+
+      console.log('Calling modifyLiquidities with:', {
+        unlockData,
+        deadline: deadline.toString(),
+        positionManager: contracts.positionManager,
+      });
 
       const hash = await writeContractAsync({
         address: contracts.positionManager,
