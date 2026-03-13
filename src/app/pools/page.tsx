@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt, useReadContract, usePublicClient } from 'wagmi';
-import { parseUnits, formatUnits, encodeAbiParameters, parseAbiParameters } from 'viem';
+import { useAccount, useChainId, useWriteContract, useReadContract, usePublicClient } from 'wagmi';
+import { parseUnits, formatUnits, encodeAbiParameters, encodePacked, concat, toHex } from 'viem';
 import Link from 'next/link';
 
 // Contract addresses per chain
@@ -14,6 +14,8 @@ const CONTRACTS: Record<number, {
   usdc: `0x${string}`;
   wethSymbol: string;
   usdcDecimals: number;
+  chainName: string;
+  explorer: string;
 }> = {
   8453: {
     poolManager: '0x498581fF718922c3f8e6A244956aF099B2652b2b',
@@ -23,6 +25,8 @@ const CONTRACTS: Record<number, {
     usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     wethSymbol: 'WETH',
     usdcDecimals: 6,
+    chainName: 'Base',
+    explorer: 'https://basescan.org',
   },
   42220: {
     poolManager: '0x288dc841A52FCA2707c6947B3A777c5E56cd87BC',
@@ -32,6 +36,8 @@ const CONTRACTS: Record<number, {
     usdc: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C',
     wethSymbol: 'CELO',
     usdcDecimals: 6,
+    chainName: 'Celo',
+    explorer: 'https://celoscan.io',
   },
   130: {
     poolManager: '0x1F98400000000000000000000000000000000004',
@@ -41,7 +47,16 @@ const CONTRACTS: Record<number, {
     usdc: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
     wethSymbol: 'WETH',
     usdcDecimals: 6,
+    chainName: 'Unichain',
+    explorer: 'https://uniscan.xyz',
   },
+};
+
+// Actions from Uniswap V4 Position Manager
+const Actions = {
+  MINT_POSITION: 0,
+  SETTLE_PAIR: 16,
+  SWEEP: 23,
 };
 
 const ERC20_ABI = [
@@ -73,7 +88,7 @@ const ERC20_ABI = [
   },
 ] as const;
 
-// Position Manager ABI - modifyLiquidities for V4
+// Position Manager ABI
 const POSITION_MANAGER_ABI = [
   {
     name: 'modifyLiquidities',
@@ -88,7 +103,7 @@ const POSITION_MANAGER_ABI = [
 ] as const;
 
 type View = 'list' | 'add';
-type Step = 'input' | 'approve0' | 'approve1' | 'approved' | 'adding' | 'success' | 'error';
+type Step = 'input' | 'approving' | 'adding' | 'success' | 'error';
 
 export default function PoolsPage() {
   const { address, isConnected } = useAccount();
@@ -99,14 +114,14 @@ export default function PoolsPage() {
   const [step, setStep] = useState<Step>('input');
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
+  const [approving, setApproving] = useState<string | null>(null);
 
   const [token0Amount, setToken0Amount] = useState('0.001');
   const [token1Amount, setToken1Amount] = useState('10');
 
   const contracts = CONTRACTS[chainId];
 
-  // Write hooks
-  const { writeContractAsync, isPending: isWriting } = useWriteContract();
+  const { writeContractAsync } = useWriteContract();
 
   // Read balances
   const { data: balance0 } = useReadContract({
@@ -141,190 +156,206 @@ export default function PoolsPage() {
   const amount0Wei = parseUnits(token0Amount || '0', 18);
   const amount1Wei = parseUnits(token1Amount || '0', contracts?.usdcDecimals || 6);
 
-  const needs0Approval = !allowance0 || (allowance0 as bigint) < amount0Wei;
-  const needs1Approval = !allowance1 || (allowance1 as bigint) < amount1Wei;
-
-  const getChainName = () => {
-    switch (chainId) {
-      case 8453: return 'Base';
-      case 42220: return 'Celo';
-      case 130: return 'Unichain';
-      default: return 'Unknown';
-    }
-  };
-
-  const getExplorerUrl = (hash: string) => {
-    switch (chainId) {
-      case 8453: return `https://basescan.org/tx/${hash}`;
-      case 42220: return `https://celoscan.io/tx/${hash}`;
-      case 130: return `https://uniscan.xyz/tx/${hash}`;
-      default: return '';
-    }
-  };
+  const needs0Approval = !allowance0 || allowance0 < amount0Wei;
+  const needs1Approval = !allowance1 || allowance1 < amount1Wei;
+  const needsAnyApproval = needs0Approval || needs1Approval;
 
   const formatBalance = (balance: bigint | undefined, decimals: number) => {
     if (!balance) return '0.0000';
     return Number(formatUnits(balance, decimals)).toFixed(4);
   };
 
-  // Handle approval for token 0 (WETH)
-  const handleApprove0 = async () => {
-    if (!contracts) return;
-    setStep('approve0');
-    setError(null);
-
-    try {
-      const hash = await writeContractAsync({
-        address: contracts.weth,
-        abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [contracts.positionManager, amount0Wei * 100n], // Large approval
-      });
-
-      // Wait for confirmation
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash });
-      }
-
-      await refetchAllowance0();
-
-      // Check if we still need approval for token 1
-      if (needs1Approval) {
-        await handleApprove1();
-      } else {
-        setStep('approved');
-      }
-    } catch (err: any) {
-      console.error('Approval error:', err);
-      setError(err.shortMessage || err.message || 'Approval failed');
-      setStep('error');
-    }
+  const getExplorerTxUrl = (hash: string) => {
+    return `${contracts?.explorer}/tx/${hash}`;
   };
 
-  // Handle approval for token 1 (USDC)
-  const handleApprove1 = async () => {
-    if (!contracts) return;
-    setStep('approve1');
+  // Sort tokens to get currency0 < currency1
+  const getSortedCurrencies = (): [string, string, boolean] => {
+    if (!contracts) return ['', '', false];
+    const wethLower = contracts.weth.toLowerCase();
+    const usdcLower = contracts.usdc.toLowerCase();
+    const wethIsFirst = wethLower < usdcLower;
+    return wethIsFirst
+      ? [contracts.weth, contracts.usdc, true]
+      : [contracts.usdc, contracts.weth, false];
+  };
+
+  // Encode the modifyLiquidities call with CORRECT V4 format
+  const encodeModifyLiquiditiesData = (): `0x${string}` => {
+    if (!contracts || !address) throw new Error('Missing contracts or address');
+
+    const [currency0, currency1, wethIsFirst] = getSortedCurrencies();
+
+    // Calculate amounts based on which token is currency0
+    const amt0 = wethIsFirst ? amount0Wei : amount1Wei;
+    const amt1 = wethIsFirst ? amount1Wei : amount0Wei;
+
+    // Tick range for full range liquidity (tick spacing 200)
+    const tickLower = -887200;
+    const tickUpper = 887200;
+
+    // Liquidity calculation (simplified - use amt0 as proxy)
+    const liquidity = amt0 > 0n ? amt0 : 1000000000000000n;
+
+    // Actions: MINT_POSITION (0) + SETTLE_PAIR (16)
+    // Using encodePacked for actions as per Uniswap docs
+    const actions = encodePacked(
+      ['uint8', 'uint8'],
+      [Actions.MINT_POSITION, Actions.SETTLE_PAIR]
+    );
+
+    // Encode MINT_POSITION params
+    // params[0] = abi.encode(poolKey, tickLower, tickUpper, liquidity, amount0Max, amount1Max, recipient, hookData)
+    const mintParams = encodeAbiParameters(
+      [
+        {
+          type: 'tuple',
+          components: [
+            { type: 'address', name: 'currency0' },
+            { type: 'address', name: 'currency1' },
+            { type: 'uint24', name: 'fee' },
+            { type: 'int24', name: 'tickSpacing' },
+            { type: 'address', name: 'hooks' },
+          ],
+        },
+        { type: 'int24' },  // tickLower
+        { type: 'int24' },  // tickUpper
+        { type: 'uint256' }, // liquidity
+        { type: 'uint128' }, // amount0Max
+        { type: 'uint128' }, // amount1Max
+        { type: 'address' }, // owner
+        { type: 'bytes' },   // hookData
+      ],
+      [
+        {
+          currency0: currency0 as `0x${string}`,
+          currency1: currency1 as `0x${string}`,
+          fee: 0x800000, // Dynamic fee flag
+          tickSpacing: 200,
+          hooks: contracts.hook,
+        },
+        tickLower,
+        tickUpper,
+        liquidity,
+        BigInt(amt0) * 2n, // amount0Max with slippage (cast to ensure uint128 range)
+        BigInt(amt1) * 2n, // amount1Max with slippage
+        address,
+        '0x' as `0x${string}`, // empty hookData
+      ]
+    );
+
+    // Encode SETTLE_PAIR params
+    // params[1] = abi.encode(currency0, currency1)
+    const settleParams = encodeAbiParameters(
+      [{ type: 'address' }, { type: 'address' }],
+      [currency0 as `0x${string}`, currency1 as `0x${string}`]
+    );
+
+    // Final unlockData = abi.encode(actions, params[])
+    const unlockData = encodeAbiParameters(
+      [{ type: 'bytes' }, { type: 'bytes[]' }],
+      [actions, [mintParams, settleParams]]
+    );
+
+    return unlockData;
+  };
+
+  // Handle approvals
+  const handleApprove = async () => {
+    if (!contracts || !publicClient) return;
+
+    setStep('approving');
     setError(null);
 
     try {
-      const hash = await writeContractAsync({
-        address: contracts.usdc,
-        abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [contracts.positionManager, amount1Wei * 100n], // Large approval
-      });
-
-      // Wait for confirmation
-      if (publicClient) {
+      // Approve WETH if needed
+      if (needs0Approval) {
+        setApproving(contracts.wethSymbol);
+        const hash = await writeContractAsync({
+          address: contracts.weth,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [contracts.positionManager, amount0Wei * 1000n],
+        });
         await publicClient.waitForTransactionReceipt({ hash });
+        await refetchAllowance0();
       }
 
-      await refetchAllowance1();
-      setStep('approved');
+      // Approve USDC if needed
+      if (needs1Approval) {
+        setApproving('USDC');
+        const hash = await writeContractAsync({
+          address: contracts.usdc,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [contracts.positionManager, amount1Wei * 1000n],
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+        await refetchAllowance1();
+      }
+
+      setApproving(null);
+      // After approvals, go directly to adding liquidity
+      await handleAddLiquidity();
+
     } catch (err: any) {
       console.error('Approval error:', err);
       setError(err.shortMessage || err.message || 'Approval failed');
       setStep('error');
+      setApproving(null);
     }
   };
 
   // Handle add liquidity
   const handleAddLiquidity = async () => {
-    if (!contracts || !address) return;
+    if (!contracts || !publicClient || !address) return;
 
     setStep('adding');
     setError(null);
 
     try {
-      // Sort tokens for PoolKey
-      const [currency0, currency1] = contracts.weth.toLowerCase() < contracts.usdc.toLowerCase()
-        ? [contracts.weth, contracts.usdc]
-        : [contracts.usdc, contracts.weth];
+      const unlockData = encodeModifyLiquiditiesData();
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour
 
-      // For V4, we need to encode the proper unlockData
-      // This is simplified - in production use proper SDK
-
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
-
-      // Simplified action encoding for MINT_POSITION + SETTLE_PAIR
-      // Action bytes: 0x00 = MINT_POSITION, 0x10 = SETTLE_PAIR
-      const actions = '0x0010' as `0x${string}`;
-
-      // Tick range for full range
-      const tickLower = -887200;
-      const tickUpper = 887200;
-
-      // Encode mint position params
-      const mintParams = encodeAbiParameters(
-        parseAbiParameters('address,address,uint24,int24,address,int24,int24,uint256,uint256,uint256,address,bytes'),
-        [
-          currency0,
-          currency1,
-          0x800000, // Dynamic fee flag
-          200,      // Tick spacing
-          contracts.hook,
-          tickLower,
-          tickUpper,
-          amount0Wei,    // liquidity
-          amount0Wei * 2n, // amount0Max with slippage
-          amount1Wei * 2n, // amount1Max with slippage
-          address,
-          '0x' as `0x${string}`,
-        ]
-      );
-
-      // Encode settle pair params
-      const settleParams = encodeAbiParameters(
-        parseAbiParameters('address,address'),
-        [currency0, currency1]
-      );
-
-      // Combine into unlockData format
-      const unlockData = encodeAbiParameters(
-        parseAbiParameters('bytes,bytes[]'),
-        [actions, [mintParams, settleParams]]
-      );
+      // Determine if we need to send ETH value
+      // On Base/Unichain, WETH is 0x4200...0006, we use wrapped tokens not native
+      // So we don't send ETH value, just approve WETH
+      const valueToSend = 0n;
 
       const hash = await writeContractAsync({
         address: contracts.positionManager,
         abi: POSITION_MANAGER_ABI,
         functionName: 'modifyLiquidities',
         args: [unlockData, deadline],
-        value: amount0Wei, // Send ETH for WETH
+        value: valueToSend,
       });
 
       setTxHash(hash);
-
-      // Wait for confirmation
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash });
-      }
-
+      await publicClient.waitForTransactionReceipt({ hash });
       setStep('success');
+
     } catch (err: any) {
       console.error('Add liquidity error:', err);
-      setError(err.shortMessage || err.message || 'Transaction failed');
+      setError(err.shortMessage || err.message || 'Add liquidity failed');
       setStep('error');
     }
   };
 
-  // Start approval flow
-  const handleStartApproval = () => {
-    if (needs0Approval) {
-      handleApprove0();
-    } else if (needs1Approval) {
-      handleApprove1();
+  // Start the full flow
+  const handleStartFlow = async () => {
+    if (needsAnyApproval) {
+      await handleApprove();
     } else {
-      setStep('approved');
+      await handleAddLiquidity();
     }
   };
 
-  // Reset to input state
+  // Reset form
   const resetForm = () => {
     setStep('input');
     setError(null);
     setTxHash(null);
+    setApproving(null);
   };
 
   if (!contracts) {
@@ -354,7 +385,7 @@ export default function PoolsPage() {
               <Link href="/pools" className="text-white font-semibold">Pools</Link>
               <Link href="/swap" className="text-gray-400 hover:text-white transition-colors">Swap</Link>
               <div className="px-3 py-1 bg-purple-900/50 rounded-full text-purple-300 text-sm">
-                {getChainName()}
+                {contracts.chainName}
               </div>
             </div>
           </div>
@@ -403,7 +434,14 @@ export default function PoolsPage() {
               <div className="grid grid-cols-3 gap-4 py-4 border-t border-gray-700">
                 <div>
                   <div className="text-sm text-gray-400">Hook Address</div>
-                  <div className="text-white font-mono text-sm truncate">{contracts.hook}</div>
+                  <a
+                    href={`${contracts.explorer}/address/${contracts.hook}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-purple-400 hover:text-purple-300 font-mono text-sm truncate block"
+                  >
+                    {contracts.hook.slice(0, 10)}...{contracts.hook.slice(-8)}
+                  </a>
                 </div>
                 <div>
                   <div className="text-sm text-gray-400">Tick Spacing</div>
@@ -411,7 +449,7 @@ export default function PoolsPage() {
                 </div>
                 <div>
                   <div className="text-sm text-gray-400">Network</div>
-                  <div className="text-white font-semibold">{getChainName()}</div>
+                  <div className="text-white font-semibold">{contracts.chainName}</div>
                 </div>
               </div>
 
@@ -463,17 +501,17 @@ export default function PoolsPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                   </div>
-                  <h3 className="text-2xl font-bold text-white mb-2">Success!</h3>
-                  <p className="text-gray-400 mb-6">Your liquidity has been added to the pool.</p>
+                  <h3 className="text-2xl font-bold text-white mb-2">Liquidity Added!</h3>
+                  <p className="text-gray-400 mb-6">Your position has been created successfully.</p>
 
                   {txHash && (
                     <a
-                      href={getExplorerUrl(txHash)}
+                      href={getExplorerTxUrl(txHash)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-6"
                     >
-                      View on Explorer
+                      View Transaction
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                       </svg>
@@ -509,7 +547,7 @@ export default function PoolsPage() {
                     </svg>
                   </div>
                   <h3 className="text-2xl font-bold text-white mb-2">Transaction Failed</h3>
-                  <p className="text-red-400 text-sm mb-6 max-w-sm mx-auto">{error}</p>
+                  <p className="text-red-400 text-sm mb-6 max-w-sm mx-auto break-words">{error}</p>
 
                   <button
                     onClick={resetForm}
@@ -521,13 +559,13 @@ export default function PoolsPage() {
               )}
 
               {/* Input/Processing States */}
-              {step !== 'success' && step !== 'error' && (
+              {(step === 'input' || step === 'approving' || step === 'adding') && (
                 <>
                   {/* Token 0 Input */}
                   <div className="mb-4">
                     <div className="flex justify-between text-sm mb-2">
                       <span className="text-gray-400">Token 1</span>
-                      <span className="text-gray-400">Balance: {formatBalance(balance0 as bigint | undefined, 18)}</span>
+                      <span className="text-gray-400">Balance: {formatBalance(balance0, 18)}</span>
                     </div>
                     <div className="flex items-center bg-gray-900/50 rounded-xl p-4 border border-gray-700">
                       <input
@@ -539,12 +577,14 @@ export default function PoolsPage() {
                         disabled={step !== 'input'}
                       />
                       <button
-                        onClick={() => balance0 && setToken0Amount(formatUnits(balance0 as bigint, 18))}
+                        onClick={() => balance0 && setToken0Amount(formatUnits(balance0, 18))}
                         className="text-purple-400 text-sm mr-3 hover:text-purple-300"
+                        disabled={step !== 'input'}
                       >
                         MAX
                       </button>
-                      <div className="bg-gray-700 px-4 py-2 rounded-xl">
+                      <div className="bg-gray-700 px-4 py-2 rounded-xl flex items-center gap-2">
+                        {!needs0Approval && <span className="text-green-400 text-sm">✓</span>}
                         <span className="text-white font-semibold">{contracts.wethSymbol}</span>
                       </div>
                     </div>
@@ -561,7 +601,7 @@ export default function PoolsPage() {
                   <div className="mb-6">
                     <div className="flex justify-between text-sm mb-2">
                       <span className="text-gray-400">Token 2</span>
-                      <span className="text-gray-400">Balance: {formatBalance(balance1 as bigint | undefined, contracts.usdcDecimals)}</span>
+                      <span className="text-gray-400">Balance: {formatBalance(balance1, contracts.usdcDecimals)}</span>
                     </div>
                     <div className="flex items-center bg-gray-900/50 rounded-xl p-4 border border-gray-700">
                       <input
@@ -573,12 +613,14 @@ export default function PoolsPage() {
                         disabled={step !== 'input'}
                       />
                       <button
-                        onClick={() => balance1 && setToken1Amount(formatUnits(balance1 as bigint, contracts.usdcDecimals))}
+                        onClick={() => balance1 && setToken1Amount(formatUnits(balance1, contracts.usdcDecimals))}
                         className="text-purple-400 text-sm mr-3 hover:text-purple-300"
+                        disabled={step !== 'input'}
                       >
                         MAX
                       </button>
-                      <div className="bg-gray-700 px-4 py-2 rounded-xl">
+                      <div className="bg-gray-700 px-4 py-2 rounded-xl flex items-center gap-2">
+                        {!needs1Approval && <span className="text-green-400 text-sm">✓</span>}
                         <span className="text-white font-semibold">USDC</span>
                       </div>
                     </div>
@@ -593,31 +635,11 @@ export default function PoolsPage() {
                   </div>
 
                   {/* Status Messages */}
-                  {step === 'approve0' && (
+                  {step === 'approving' && (
                     <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-xl p-4 mb-4">
                       <div className="flex items-center gap-3 text-yellow-300">
                         <div className="w-5 h-5 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
-                        <span>Approving {contracts.wethSymbol}... Please confirm in wallet</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {step === 'approve1' && (
-                    <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-xl p-4 mb-4">
-                      <div className="flex items-center gap-3 text-yellow-300">
-                        <div className="w-5 h-5 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
-                        <span>Approving USDC... Please confirm in wallet</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {step === 'approved' && (
-                    <div className="bg-green-900/20 border border-green-500/30 rounded-xl p-4 mb-4">
-                      <div className="flex items-center gap-2 text-green-300">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        <span>Tokens approved! Click below to add liquidity.</span>
+                        <span>Approving {approving}... Please confirm in wallet</span>
                       </div>
                     </div>
                   )}
@@ -631,6 +653,18 @@ export default function PoolsPage() {
                     </div>
                   )}
 
+                  {/* Approval Status */}
+                  {!needsAnyApproval && step === 'input' && (
+                    <div className="bg-green-900/20 border border-green-500/30 rounded-xl p-4 mb-4">
+                      <div className="flex items-center gap-2 text-green-400">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>Both tokens already approved!</span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Action Button */}
                   {!isConnected ? (
                     <button
@@ -639,61 +673,38 @@ export default function PoolsPage() {
                     >
                       Connect Wallet
                     </button>
-                  ) : step === 'input' ? (
-                    needs0Approval || needs1Approval ? (
-                      <button
-                        onClick={handleStartApproval}
-                        disabled={!token0Amount || !token1Amount || Number(token0Amount) <= 0 || Number(token1Amount) <= 0}
-                        className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-xl font-semibold transition-all"
-                      >
-                        Approve Tokens
-                      </button>
-                    ) : (
-                      <button
-                        onClick={handleAddLiquidity}
-                        disabled={!token0Amount || !token1Amount || Number(token0Amount) <= 0 || Number(token1Amount) <= 0}
-                        className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-xl font-semibold transition-all"
-                      >
-                        Add Liquidity
-                      </button>
-                    )
-                  ) : step === 'approve0' || step === 'approve1' ? (
+                  ) : step === 'approving' || step === 'adding' ? (
                     <button
                       disabled
                       className="w-full py-4 bg-gray-700 text-gray-400 rounded-xl font-semibold cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                      Approving...
+                      {step === 'approving' ? 'Approving...' : 'Adding Liquidity...'}
                     </button>
-                  ) : step === 'approved' ? (
+                  ) : (
                     <button
-                      onClick={handleAddLiquidity}
-                      className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl font-semibold transition-all"
+                      onClick={handleStartFlow}
+                      disabled={!token0Amount || !token1Amount || Number(token0Amount) <= 0 || Number(token1Amount) <= 0}
+                      className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-xl font-semibold transition-all"
                     >
-                      Add Liquidity
+                      {needsAnyApproval ? 'Approve & Add Liquidity' : 'Add Liquidity'}
                     </button>
-                  ) : step === 'adding' ? (
-                    <button
-                      disabled
-                      className="w-full py-4 bg-gray-700 text-gray-400 rounded-xl font-semibold cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                      Adding Liquidity...
-                    </button>
-                  ) : null}
+                  )}
                 </>
               )}
             </div>
 
             {/* Info Card */}
-            {step !== 'success' && step !== 'error' && (
+            {step === 'input' && (
               <div className="mt-6 bg-gray-800/30 rounded-xl p-4">
-                <h4 className="text-white font-semibold mb-2">📋 How it works</h4>
+                <h4 className="text-white font-semibold mb-2">📋 What happens next</h4>
                 <ul className="text-sm text-gray-400 space-y-1">
-                  <li>1. Approve both tokens for the Position Manager</li>
-                  <li>2. Add liquidity creates a full-range position</li>
-                  <li>3. Earn dynamic fees that adjust with volatility</li>
-                  <li>4. Higher volatility = higher fees = better LP protection</li>
+                  <li className={!needsAnyApproval ? 'text-green-400' : ''}>
+                    {!needsAnyApproval ? '✓ ' : '1. '}Approve tokens for Position Manager
+                  </li>
+                  <li>2. Add liquidity to the {contracts.wethSymbol}/USDC pool</li>
+                  <li>3. Receive LP position NFT</li>
+                  <li>4. Start earning dynamic fees!</li>
                 </ul>
               </div>
             )}
@@ -703,3 +714,4 @@ export default function PoolsPage() {
     </div>
   );
 }
+
