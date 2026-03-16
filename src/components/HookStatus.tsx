@@ -67,7 +67,7 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
 
         const [currentFee, volatility, minFee, maxFee, lastPrice] = await Promise.all([
           client.readContract({
-            address: chainConfig.hook,
+            address: chainConfig.hookAddress,
             abi: DYNAMIC_FEE_HOOK_ABI,
             functionName: 'getCurrentFee',
           }),
@@ -77,17 +77,17 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
             functionName: 'ewmaVolatility',
           }),
           client.readContract({
-            address: chainConfig.hook,
+            address: chainConfig.hookAddress,
             abi: DYNAMIC_FEE_HOOK_ABI,
             functionName: 'MIN_FEE',
           }),
           client.readContract({
-            address: chainConfig.hook,
+            address: chainConfig.hookAddress,
             abi: DYNAMIC_FEE_HOOK_ABI,
             functionName: 'MAX_FEE',
           }),
           client.readContract({
-            address: chainConfig.hook,
+            address: chainConfig.hookAddress,
             abi: DYNAMIC_FEE_HOOK_ABI,
             functionName: 'lastPrice',
           }),
