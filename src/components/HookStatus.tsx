@@ -1,11 +1,12 @@
 // src/components/HookStatus.tsx
+'use client';
+
 import React, { useEffect, useState } from 'react';
-import { createPublicClient, http, formatUnits } from 'viem';
+import { createPublicClient, http } from 'viem';
 import { base, optimism, celo } from 'viem/chains';
 import { SUPPORTED_CHAINS, DYNAMIC_FEE_HOOK_ABI } from '../config/contracts';
 
 // Define Unichain since it might not be in viem yet
-
 const unichain = {
   id: 130,
   name: 'Unichain',
@@ -17,7 +18,6 @@ const unichain = {
     default: { name: 'Uniscan', url: 'https://uniscan.xyz' },
   },
 } as const;
-
 
 const CHAIN_MAP: Record<number, any> = {
   8453: base,
@@ -52,13 +52,13 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
   });
 
   useEffect(() => {
-    const fetchHookData = async () => {
-      const chainConfig = SUPPORTED_CHAINS[chainId];
-      if (!chainConfig) {
-        setHookData(prev => ({ ...prev, loading: false, error: 'Chain not supported' }));
-        return;
-      }
+    const chainConfig = SUPPORTED_CHAINS[chainId];
+    if (!chainConfig) {
+      setHookData(prev => ({ ...prev, loading: false, error: 'Chain not supported' }));
+      return;
+    }
 
+    const fetchHookData = async () => {
       try {
         const client = createPublicClient({
           chain: CHAIN_MAP[chainId],
@@ -72,7 +72,7 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
             functionName: 'getCurrentFee',
           }),
           client.readContract({
-            address: chainConfig.hook,
+            address: chainConfig.hookAddress,
             abi: DYNAMIC_FEE_HOOK_ABI,
             functionName: 'ewmaVolatility',
           }),
@@ -113,15 +113,15 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
     };
 
     fetchHookData();
-    const interval = setInterval(fetchHookData, 10000); // Refresh every 10s
+    const interval = setInterval(fetchHookData, 10000);
     return () => clearInterval(interval);
   }, [chainId]);
 
+  const chainConfig = SUPPORTED_CHAINS[chainId];
   const feePercentage = (hookData.currentFee / 10000).toFixed(2);
   const minFeePercentage = (hookData.minFee / 10000).toFixed(2);
   const maxFeePercentage = (hookData.maxFee / 10000).toFixed(2);
   
-  // Calculate fee position in range (0-100%)
   const feePosition = hookData.maxFee > hookData.minFee
     ? ((hookData.currentFee - hookData.minFee) / (hookData.maxFee - hookData.minFee)) * 100
     : 0;
@@ -149,7 +149,6 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
         🔄 Dynamic Fee Status
       </h3>
 
-      {/* Current Fee Display */}
       <div className="mb-6">
         <div className="flex items-baseline gap-2 mb-2">
           <span className="text-4xl font-bold text-green-400">
@@ -158,7 +157,6 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
           <span className="text-gray-500">current fee</span>
         </div>
 
-        {/* Fee Range Bar */}
         <div className="relative h-3 bg-gray-700 rounded-full overflow-hidden">
           <div
             className="absolute h-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 transition-all duration-500"
@@ -176,7 +174,6 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
         </div>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-gray-700/50 rounded-lg p-3">
           <p className="text-xs text-gray-400 mb-1">Volatility (EWMA)</p>
@@ -192,12 +189,11 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
         </div>
       </div>
 
-      {/* Chain Info */}
       <div className="mt-4 pt-4 border-t border-gray-700">
         <p className="text-xs text-gray-500">
-          Hook: {SUPPORTED_CHAINS[chainId]?.hook.slice(0, 10)}...
+          Hook: {chainConfig?.hookAddress?.slice(0, 10)}...
           <a
-            href={`${SUPPORTED_CHAINS[chainId]?.explorer}/address/${SUPPORTED_CHAINS[chainId]?.hook}`}
+            href={`${chainConfig?.explorer}/address/${chainConfig?.hookAddress}`}
             target="_blank"
             rel="noopener noreferrer"
             className="ml-2 text-blue-400 hover:text-blue-300"
@@ -211,4 +207,3 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
 };
 
 export default HookStatus;
-
