@@ -2,6 +2,11 @@
 import React from 'react';
 import { SUPPORTED_CHAINS, ChainConfig } from '../config/contracts';
 
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
 interface ChainSelectorProps {
   currentChainId: number;
   onChainChange: (chainId: number) => void;
