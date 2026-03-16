@@ -41,7 +41,7 @@ export const SUPPORTED_CHAINS: Record<number, ChainConfig> = {
     name: "Base",
     rpcUrl: "https://mainnet.base.org",
     explorer: "https://basescan.org",
-    hook: "0xCED22Ff119c151b9CaD797941dAC215B67E5b0c0",
+    hookAddress: '0xCED22Ff119c151b9CaD797941dAC215B67E5b0c0',
     poolManager: "0x498581fF718922c3f8e6A244956aF099B2652b2b",
     positionManager: "0x7C5f5A4bBd8fD63184577525326123B519429bDc",
     permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
