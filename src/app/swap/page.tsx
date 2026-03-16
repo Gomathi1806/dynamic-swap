@@ -5,6 +5,15 @@ export const dynamic = 'force-dynamic';
 
 import { useSearchParams } from "next/navigation";
 import { SwapCard } from "@/components/oldSwapCard";
+import SimpleSwap from '@/components/SimpleSwap';
+
+export default function SwapPage() {
+  return (
+    <main className="container mx-auto px-4 py-8">
+      <SimpleSwap />
+    </main>
+  );
+}
 
 export default function SwapPage() {
   const searchParams = useSearchParams();
