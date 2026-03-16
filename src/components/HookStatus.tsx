@@ -6,7 +6,6 @@ import { createPublicClient, http } from 'viem';
 import { base, optimism, celo } from 'viem/chains';
 import { SUPPORTED_CHAINS, DYNAMIC_FEE_HOOK_ABI } from '../config/contracts';
 
-// Define Unichain since it might not be in viem yet
 const unichain = {
   id: 130,
   name: 'Unichain',
@@ -35,18 +34,16 @@ interface HookData {
   volatility: number;
   minFee: number;
   maxFee: number;
-  lastPrice: bigint;
   loading: boolean;
   error: string | null;
 }
 
 export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
   const [hookData, setHookData] = useState<HookData>({
-    currentFee: 0,
+    currentFee: 3000,
     volatility: 0,
     minFee: 3000,
     maxFee: 10000,
-    lastPrice: BigInt(0),
     loading: true,
     error: null,
   });
@@ -65,7 +62,7 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
           transport: http(chainConfig.rpcUrl),
         });
 
-        const [currentFee, volatility, minFee, maxFee, lastPrice] = await Promise.all([
+        const [currentFee, volatility, minFee, maxFee] = await Promise.all([
           client.readContract({
             address: chainConfig.hookAddress,
             abi: DYNAMIC_FEE_HOOK_ABI,
@@ -86,11 +83,6 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
             abi: DYNAMIC_FEE_HOOK_ABI,
             functionName: 'MAX_FEE',
           }),
-          client.readContract({
-            address: chainConfig.hookAddress,
-            abi: DYNAMIC_FEE_HOOK_ABI,
-            functionName: 'lastPrice',
-          }),
         ]);
 
         setHookData({
@@ -98,7 +90,6 @@ export const HookStatus: React.FC<HookStatusProps> = ({ chainId }) => {
           volatility: Number(volatility),
           minFee: Number(minFee),
           maxFee: Number(maxFee),
-          lastPrice: lastPrice as bigint,
           loading: false,
           error: null,
         });
