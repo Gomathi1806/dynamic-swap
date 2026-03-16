@@ -5,6 +5,7 @@ import { base, optimism, celo } from 'viem/chains';
 import { SUPPORTED_CHAINS, DYNAMIC_FEE_HOOK_ABI } from '../config/contracts';
 
 // Define Unichain since it might not be in viem yet
+
 const unichain = {
   id: 130,
   name: 'Unichain',
@@ -16,6 +17,7 @@ const unichain = {
     default: { name: 'Uniscan', url: 'https://uniscan.xyz' },
   },
 } as const;
+
 
 const CHAIN_MAP: Record<number, any> = {
   8453: base,
