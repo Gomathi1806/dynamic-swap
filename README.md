@@ -23,6 +23,10 @@ Liquidity Providers (LPs) on traditional AMMs face a critical challenge: **stati
 
 ---
 
+**Specialized Markets Fit**
+✅ Chain-localized: Deployed on Base, Optimism, Unichain, Celo with chain-specific tuning
+✅ Asset-aware: Fee curves optimized for volatile pairs (ETH/USDC, CELO/cUSD)
+✅ L2-native: Optimized for fast L2 block times
 ## 🌐 Live Deployments
 
 | Chain | Hook Contract | Pool Status | Explorer |
@@ -37,7 +41,14 @@ Liquidity Providers (LPs) on traditional AMMs face a critical challenge: **stati
 **👤 Owner:** `0x22bc13d2936f738bc820A6934FA8eC60EA51a621`
 
 ---
+** Technical Highlights**
 
+Uses beforeSwap to return dynamic fee override
+EWMA volatility tracking via afterSwap
+Fee range: MIN_FEE=100 (0.01%), MAX_FEE=10000 (1.00%)
+Pools initialized with full-range liquidity
+
+--
 ## ✨ Features
 
 ### 🔄 Dynamic Fee Adjustment
@@ -258,26 +269,12 @@ dynamic-swap/
 
 ---
 
-## 🗺️ Roadmap
 
-### Completed ✅
-- [x] Core dynamic fee hook implementation
-- [x] Multi-chain deployment (Base, Optimism, Unichain, Celo)
-- [x] Pool initialization and liquidity
-- [x] Frontend with chain switching
-- [x] Real-time fee display
+**What's Next **
 
-### In Progress 🔄
-- [ ] Additional trading pairs
-- [ ] Historical volatility charts
-- [ ] LP analytics dashboard
-
-### Planned 📋
-- [ ] Asset class categorization (V2)
-- [ ] Custom fee profiles per asset type
-- [ ] Governance for parameter updates
-- [ ] More chain deployments
-
+Chainlink oracle integration for external volatility data
+Insurance reserve accumulation from fees
+IL protection payouts to LPs
 ---
 
 ## 🏆 Hackathon Submission
